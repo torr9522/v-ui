@@ -441,6 +441,102 @@ func TestWaitForReadyTimeout(t *testing.T) {
 	}
 }
 
+func TestFindAcmeShPrefersRootHome(t *testing.T) {
+	rootHome := filepath.Join(t.TempDir(), "root-acme")
+	if err := os.MkdirAll(rootHome, 0755); err != nil {
+		t.Fatalf("mkdir acme home failed: %v", err)
+	}
+	rootBin := filepath.Join(rootHome, "acme.sh")
+	if err := os.WriteFile(rootBin, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatalf("write acme bin failed: %v", err)
+	}
+
+	service := CertService{
+		acmeSearchHomes: []string{rootHome},
+	}
+	acmeHome, acmeBin, err := service.findAcmeSh()
+	if err != nil {
+		t.Fatalf("findAcmeSh failed: %v", err)
+	}
+	if acmeHome != rootHome {
+		t.Fatalf("expected acme home %s, got %s", rootHome, acmeHome)
+	}
+	if acmeBin != rootBin {
+		t.Fatalf("expected acme bin %s, got %s", rootBin, acmeBin)
+	}
+}
+
+func TestFindAcmeShFallsBackToLegacyRootPath(t *testing.T) {
+	legacyHome := filepath.Join(t.TempDir(), "legacy-acme")
+	if err := os.MkdirAll(legacyHome, 0755); err != nil {
+		t.Fatalf("mkdir legacy acme home failed: %v", err)
+	}
+	legacyBin := filepath.Join(legacyHome, "acme.sh")
+	if err := os.WriteFile(legacyBin, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatalf("write legacy acme bin failed: %v", err)
+	}
+
+	service := CertService{
+		acmeSearchHomes: []string{filepath.Join(t.TempDir(), "missing"), legacyHome},
+	}
+	acmeHome, acmeBin, err := service.findAcmeSh()
+	if err != nil {
+		t.Fatalf("findAcmeSh failed: %v", err)
+	}
+	if acmeHome != legacyHome {
+		t.Fatalf("expected legacy acme home %s, got %s", legacyHome, acmeHome)
+	}
+	if acmeBin != legacyBin {
+		t.Fatalf("expected legacy acme bin %s, got %s", legacyBin, acmeBin)
+	}
+}
+
+func TestFindAcmeShReturnsErrorWhenMissing(t *testing.T) {
+	service := CertService{
+		acmeSearchHomes: []string{filepath.Join(t.TempDir(), "missing")},
+		lookPath: func(string) (string, error) {
+			return "", errors.New("not found")
+		},
+	}
+	if _, _, err := service.findAcmeSh(); err == nil {
+		t.Fatalf("expected findAcmeSh to fail when acme.sh is missing")
+	}
+}
+
+func TestInstallAcmeCertificateUsesDiscoveredHomeAndBin(t *testing.T) {
+	acmeHome := filepath.Join(t.TempDir(), "acme-home")
+	if err := os.MkdirAll(acmeHome, 0755); err != nil {
+		t.Fatalf("mkdir acme home failed: %v", err)
+	}
+	acmeBin := filepath.Join(acmeHome, "acme.sh")
+	if err := os.WriteFile(acmeBin, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatalf("write acme bin failed: %v", err)
+	}
+
+	var gotName string
+	var gotArgs []string
+	service := CertService{
+		acmeSearchHomes: []string{acmeHome},
+		runCommand: func(name string, args ...string) ([]byte, error) {
+			gotName = name
+			gotArgs = append([]string{}, args...)
+			return []byte("ok"), nil
+		},
+	}
+	if err := service.installAcmeCertificate("example.com", "/tmp/panel.crt", "/tmp/panel.key"); err != nil {
+		t.Fatalf("installAcmeCertificate failed: %v", err)
+	}
+	if gotName != acmeBin {
+		t.Fatalf("expected command %s, got %s", acmeBin, gotName)
+	}
+	expectedPrefix := []string{"--home", acmeHome, "--install-cert", "-d", "example.com"}
+	for i, want := range expectedPrefix {
+		if i >= len(gotArgs) || gotArgs[i] != want {
+			t.Fatalf("expected arg[%d]=%s, got %v", i, want, gotArgs)
+		}
+	}
+}
+
 func generateSelfSignedCert(dnsNames []string, notAfter time.Time) ([]byte, []byte, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {

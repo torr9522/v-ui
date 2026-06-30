@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"x-ui/logger"
 	"x-ui/util/common"
 	"x-ui/web/entity"
 )
@@ -39,6 +40,10 @@ type CertService struct {
 	waitHTTPSReadyFn func(int, time.Duration) error
 	waitHTTPReadyFn  func(int, time.Duration) error
 	runCommand       func(name string, args ...string) ([]byte, error)
+	acmeSearchHomes  []string
+	envLookup        func(string) string
+	lookPath         func(string) (string, error)
+	userHomeDir      func() (string, error)
 }
 
 type certInfo struct {
@@ -757,24 +762,27 @@ func (s *CertService) ensurePortAvailable(port int) error {
 }
 
 func (s *CertService) ensureAcmeInstalled(email string) error {
-	acmePath := s.acmeBinaryPath()
-	if fileExists(acmePath) {
+	if _, acmeBin, err := s.findAcmeSh(); err == nil {
+		logger.Infof("using existing acme.sh at %s", acmeBin)
 		return nil
 	}
 	scriptPath := "/usr/local/x-ui/scripts/acme_install.sh"
 	if !fileExists(scriptPath) {
 		return errors.New("acme install script not found")
 	}
-	args := []string{scriptPath}
+	args := []string{"HOME=/root", "ACMESH_HOME=/root/.acme.sh", "sh", scriptPath}
 	if email != "" {
 		args = append(args, "email="+email)
 	}
-	if _, err := s.command("sh", args...); err != nil {
+	args = append(args, "--home", "/root/.acme.sh")
+	if _, err := s.command("env", args...); err != nil {
 		return fmt.Errorf("install acme.sh failed: %w", err)
 	}
-	if !fileExists(acmePath) {
-		return errors.New("acme.sh installation did not produce executable")
+	acmeHome, acmeBin, err := s.findAcmeSh()
+	if err != nil {
+		return fmt.Errorf("acme.sh installation did not produce executable: %w", err)
 	}
+	logger.Infof("acme.sh installed at %s (home=%s)", acmeBin, acmeHome)
 	return nil
 }
 
@@ -806,13 +814,16 @@ func (s *CertService) ensureSocatInstalled() error {
 }
 
 func (s *CertService) issueAcmeCertificate(domain string, staging bool) error {
-	acmePath := s.acmeBinaryPath()
+	acmeHome, acmePath, err := s.findAcmeSh()
+	if err != nil {
+		return err
+	}
 	if !staging {
-		if _, err := s.command(acmePath, "--set-default-ca", "--server", "letsencrypt"); err != nil {
+		if _, err := s.command(acmePath, "--home", acmeHome, "--set-default-ca", "--server", "letsencrypt"); err != nil {
 			return fmt.Errorf("set default acme ca failed: %w", err)
 		}
 	}
-	args := []string{"--issue", "-d", domain, "--standalone", "--httpport", "80"}
+	args := []string{"--home", acmeHome, "--issue", "-d", domain, "--standalone", "--httpport", "80"}
 	if staging {
 		args = append(args, "--staging")
 	}
@@ -823,19 +834,94 @@ func (s *CertService) issueAcmeCertificate(domain string, staging bool) error {
 }
 
 func (s *CertService) installAcmeCertificate(domain string, certFile string, keyFile string) error {
-	acmePath := s.acmeBinaryPath()
-	if _, err := s.command(acmePath, "--install-cert", "-d", domain, "--cert-file", certFile, "--key-file", keyFile); err != nil {
+	acmeHome, acmePath, err := s.findAcmeSh()
+	if err != nil {
+		return err
+	}
+	if _, err := s.command(acmePath, "--home", acmeHome, "--install-cert", "-d", domain, "--cert-file", certFile, "--key-file", keyFile); err != nil {
 		return fmt.Errorf("install acme certificate failed: %w", err)
 	}
 	return nil
 }
 
-func (s *CertService) acmeBinaryPath() string {
-	home := strings.TrimSpace(os.Getenv("HOME"))
-	if home == "" {
-		home = "/root"
+func (s *CertService) findAcmeSh() (string, string, error) {
+	for _, home := range s.acmeCandidateHomes() {
+		if home == "" {
+			continue
+		}
+		bin := filepath.Join(home, "acme.sh")
+		if fileExists(bin) {
+			return home, bin, nil
+		}
 	}
-	return filepath.Join(home, ".acme.sh", "acme.sh")
+
+	lookupPath := exec.LookPath
+	if s.lookPath != nil {
+		lookupPath = s.lookPath
+	}
+	if bin, err := lookupPath("acme.sh"); err == nil {
+		bin = strings.TrimSpace(bin)
+		if bin != "" {
+			return filepath.Dir(bin), bin, nil
+		}
+	}
+
+	return "", "", errors.New("acme.sh executable not found")
+}
+
+func (s *CertService) acmeCandidateHomes() []string {
+	if len(s.acmeSearchHomes) > 0 {
+		return uniqueNonEmptyStrings(s.acmeSearchHomes)
+	}
+
+	lookupEnv := os.Getenv
+	if s.envLookup != nil {
+		lookupEnv = s.envLookup
+	}
+	userHomeDir := os.UserHomeDir
+	if s.userHomeDir != nil {
+		userHomeDir = s.userHomeDir
+	}
+
+	candidates := make([]string, 0, 4)
+	if home := normalizeAcmeHome(lookupEnv("ACMESH_HOME")); home != "" {
+		candidates = append(candidates, home)
+	}
+	candidates = append(candidates, "/root/.acme.sh", "/.acme.sh")
+	if home, err := userHomeDir(); err == nil {
+		if home = strings.TrimSpace(home); home != "" {
+			candidates = append(candidates, filepath.Join(home, ".acme.sh"))
+		}
+	}
+	return uniqueNonEmptyStrings(candidates)
+}
+
+func normalizeAcmeHome(home string) string {
+	home = strings.TrimSpace(home)
+	if home == "" {
+		return ""
+	}
+	if strings.HasSuffix(home, "/acme.sh") {
+		return filepath.Dir(home)
+	}
+	return home
+}
+
+func uniqueNonEmptyStrings(values []string) []string {
+	result := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func (s *CertService) command(name string, args ...string) ([]byte, error) {
