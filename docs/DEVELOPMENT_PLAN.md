@@ -1,18 +1,19 @@
-# C-UI Development Plan
+# v-ui Development Plan
 
 ## Strategy
 
-`c-ui` keeps independent branding while freezing the runtime layer.
+`v-ui` is the project codename, while the runtime and display layer remain `x-ui`.
 
-Brand layer:
+Project layer:
 
-- `C-UI` naming in repository and documentation
-- `C-UI` page titles
-- `C-UI` menu branding
+- `v-ui` naming in repository and documentation
+- migration and planning records
 
-Runtime layer:
+Runtime and display layer:
 
 - remains compatibility-first
+- keeps `x-ui` page titles
+- keeps `x-ui` menu branding
 - does not enter runtime rename work in the current roadmap
 
 See [ADR-001 Runtime Freeze](./ADR-001-runtime-freeze.md).
@@ -35,7 +36,7 @@ Add routing rule management.
 
 Status: in progress.
 
-Add the `managedOutboundsRouting` switch and let C-UI generate Xray `outbounds` and `routing.rules` from the Outbounds and Routing pages while keeping legacy template mode as the default.
+Add the `managedOutboundsRouting` switch and let `x-ui` generate Xray `outbounds` and `routing.rules` from the Outbounds and Routing pages while keeping legacy template mode as the default.
 
 ### Phase 4: Template
 

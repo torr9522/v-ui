@@ -1,11 +1,11 @@
-# ADR-001: Brand Independent, Runtime Frozen
+# ADR-001: v-ui Project, x-ui Runtime And Display
 
 - Status: `Accepted`
 - Date: `2026-06-29`
 
 ## Context
 
-`c-ui` has already been isolated from the original `n-ui` repository and now has its own branding baseline and source baseline.
+The current codebase is developed in an isolated `v-ui` project workspace, but runtime compatibility remains anchored to `x-ui`.
 
 The original plan included a runtime-layer rename, covering items such as:
 
@@ -18,23 +18,22 @@ The original plan included a runtime-layer rename, covering items such as:
 - release packaging
 - test matrix
 
-This work would add maintenance cost but would not directly deliver the core product capabilities planned for `c-ui`.
+This work would add maintenance cost but would not directly deliver the product capabilities planned for the `v-ui` project.
 
 ## Decision
 
-`c-ui` adopts the following strategy:
+The project adopts the following strategy:
 
-> Brand independent, Runtime frozen.
+> Project codename independent, x-ui runtime/display frozen.
 
-Brand layer is allowed to be `C-UI`, including:
+Project management layer is allowed to use the `v-ui` codename, including:
 
 - repository identity
-- README
-- logo and naming
-- web page titles
-- web menu branding
+- local branch naming
+- planning documents
+- migration notes
 
-Runtime layer remains compatibility-first and is frozen for now.
+Runtime and display layer remain compatibility-first and are frozen to `x-ui` for now.
 
 ## Runtime Freeze Scope
 
@@ -45,6 +44,8 @@ Unless the user explicitly issues `解除 Runtime Freeze`, the following must no
 - `/xui`
 - `x-ui.service`
 - `x-ui` command
+- panel page titles
+- sidebar branding
 - database tables
 - setting keys
 - `install.sh`
@@ -61,8 +62,8 @@ Benefits:
 
 Tradeoffs:
 
-- runtime naming remains mixed with `x-ui` / `n-ui` compatibility surfaces
-- brand and runtime names are intentionally not fully unified
+- repository codename and runtime display name are intentionally not unified
+- panel-facing naming cannot be used for `v-ui` branding experiments
 
 ## Feature Priority After This ADR
 

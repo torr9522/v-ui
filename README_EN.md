@@ -1,15 +1,15 @@
-# C-UI
+# v-ui Project
 
 [简体中文](./README.md) | ENGLISH
 
-C-UI is a standalone `x-ui`-compatible panel repository. This codebase already includes outbound management, routing management, an AI traffic split template, and managed Xray config generation driven by `managedOutboundsRouting`.
+`v-ui` is the project codename. The runtime layer, service name, command name, install path, and panel display name remain `x-ui`. This codebase already includes outbound management, routing management, an AI traffic split template, and managed Xray config generation driven by `managedOutboundsRouting`.
 
 ## Main Features
 
 - Outbounds: list page, CRUD API, frontend CRUD, system entry protection, and routing reference protection
 - Routing: list page, CRUD API, reorder support, enable/disable support
 - AI traffic split template for OpenAI, Claude, Gemini, Grok, Perplexity, Poe, Cursor, GitHub Copilot, and HuggingFace
-- Managed config mode: C-UI can generate `outbounds` and `routing.rules` directly
+- Managed config mode: `x-ui` can generate `outbounds` and `routing.rules` directly
 - Source-install bootstrap: when no prebuilt `x-ui` binary exists, `install.sh` automatically installs Go, gcc, git, tar, curl, unzip, and `file`, then builds with `CGO_ENABLED=1`
 
 ## Runtime Freeze
@@ -22,6 +22,11 @@ Runtime compatibility stays intentionally unchanged:
 - web route prefix: `/xui`
 
 This is a compatibility decision, not an error. See [docs/ADR-001-runtime-freeze.md](./docs/ADR-001-runtime-freeze.md).
+
+Additional note:
+
+- repository / branch / documentation may use the `v-ui` project codename
+- panel titles, sidebar branding, and runtime-facing names remain `x-ui`
 
 ## Installation
 

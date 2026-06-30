@@ -1,14 +1,14 @@
-# C-UI
+# v-ui Project
 简体中文 | [ENGLISH](./README_EN.md)
 
-C-UI 是一个独立仓库的 `x-ui` 兼容面板分支，已经从旧仓库切出并完成独立上传准备。当前代码基线包含出站管理、路由管理、AI 分流模板，以及基于 `managedOutboundsRouting` 的托管 Xray 配置能力。
+`v-ui` 是当前开发代号；实际运行层、服务名、命令名、安装路径和面板显示名继续保持 `x-ui`。当前代码基线包含出站管理、路由管理、AI 分流模板，以及基于 `managedOutboundsRouting` 的托管 Xray 配置能力。
 
 ## 核心功能
 
 - 出站管理：只读列表、CRUD、系统项保护、被路由引用时禁止删除
 - 路由管理：只读列表、CRUD、排序、启停控制
 - AI 分流模板：一键生成 OpenAI、Claude、Gemini、Grok、Perplexity、Poe、Cursor、GitHub Copilot、HuggingFace 规则
-- 托管配置：`managedOutboundsRouting` 开关控制是否由 C-UI 接管 `outbounds` 和 `routing.rules`
+- 托管配置：`managedOutboundsRouting` 开关控制是否由 `x-ui` 接管 `outbounds` 和 `routing.rules`
 - 安装自举：源码安装模式下，如果仓库中没有预编译 `x-ui`，`install.sh` 会自动安装 Go、gcc、git、tar、curl、unzip、file，并使用 `CGO_ENABLED=1` 构建
 
 ## Runtime Freeze
@@ -21,6 +21,11 @@ C-UI 是一个独立仓库的 `x-ui` 兼容面板分支，已经从旧仓库切�
 - Web 路由前缀仍然是 `/xui`
 
 这是一项兼容性决策，不是命名遗漏。详见 [docs/ADR-001-runtime-freeze.md](./docs/ADR-001-runtime-freeze.md)。
+
+补充说明：
+
+- 项目目录、Git 分支、文档中的项目代号可以是 `v-ui`
+- 面板标题、侧边栏显示、运行层名称一律保持 `x-ui`
 
 ## 安装
 

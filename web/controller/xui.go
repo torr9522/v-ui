@@ -42,29 +42,29 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 }
 
 func (a *XUIController) index(c *gin.Context) {
-	html(c, "index.html", "C-UI - 系统状态", nil)
+	html(c, "index.html", "x-ui - 系统状态", nil)
 }
 
 func (a *XUIController) inbounds(c *gin.Context) {
-	html(c, "inbounds.html", "C-UI - 入站列表", nil)
+	html(c, "inbounds.html", "x-ui - 入站列表", nil)
 }
 
 func (a *XUIController) outbounds(c *gin.Context) {
-	html(c, "outbounds.html", "C-UI - 出站", nil)
+	html(c, "outbounds.html", "x-ui - 出站", nil)
 }
 
 func (a *XUIController) routing(c *gin.Context) {
-	html(c, "routing.html", "C-UI - 路由", nil)
+	html(c, "routing.html", "x-ui - 路由", nil)
 }
 
 func (a *XUIController) cert(c *gin.Context) {
-	html(c, "cert.html", "V-UI - 域名证书", nil)
+	html(c, "cert.html", "x-ui - 域名证书", nil)
 }
 
 func (a *XUIController) accessIPs(c *gin.Context) {
-	html(c, "access_ips.html", "C-UI - 访问 IP", nil)
+	html(c, "access_ips.html", "x-ui - 访问 IP", nil)
 }
 
 func (a *XUIController) setting(c *gin.Context) {
-	html(c, "setting.html", "C-UI - 设置", nil)
+	html(c, "setting.html", "x-ui - 设置", nil)
 }
