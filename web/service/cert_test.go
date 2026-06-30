@@ -8,8 +8,13 @@ import (
 	"encoding/pem"
 	"errors"
 	"math/big"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 	"x-ui/database"
@@ -142,6 +147,9 @@ func TestEnableHTTPSRollsBackSettingsOnRestartFailure(t *testing.T) {
 		restartPanel: func(delay time.Duration) error {
 			return errors.New("restart failed")
 		},
+		panelPort: func() (int, error) {
+			return 54321, nil
+		},
 	}
 	if err := service.UploadCertificate(string(certPEM), string(keyPEM)); err != nil {
 		t.Fatalf("upload certificate failed: %v", err)
@@ -195,6 +203,9 @@ func TestDisableHTTPSRollsBackSettingsOnRestartFailure(t *testing.T) {
 		restartPanel: func(delay time.Duration) error {
 			return errors.New("restart failed")
 		},
+		panelPort: func() (int, error) {
+			return 54321, nil
+		},
 	}
 	if err := service.UploadCertificate(string(certPEM), string(keyPEM)); err != nil {
 		t.Fatalf("upload certificate failed: %v", err)
@@ -230,6 +241,180 @@ func TestDisableHTTPSRollsBackSettingsOnRestartFailure(t *testing.T) {
 	}
 }
 
+func TestEnableHTTPSRollsBackSettingsWhenHTTPSListenerNotReady(t *testing.T) {
+	initCertTestDB(t)
+
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"panel.example.com"}, time.Now().Add(48*time.Hour))
+	if err != nil {
+		t.Fatalf("generate cert failed: %v", err)
+	}
+
+	restartCount := 0
+	service := CertService{
+		panelCertDir: t.TempDir(),
+		restartPanel: func(delay time.Duration) error {
+			restartCount++
+			return nil
+		},
+		panelPort: func() (int, error) {
+			return 54321, nil
+		},
+		waitHTTPSReadyFn: func(port int, timeout time.Duration) error {
+			return errors.New("tls probe failed")
+		},
+		waitHTTPReadyFn: func(port int, timeout time.Duration) error {
+			return nil
+		},
+	}
+	if err := service.UploadCertificate(string(certPEM), string(keyPEM)); err != nil {
+		t.Fatalf("upload certificate failed: %v", err)
+	}
+
+	settingService := &SettingService{}
+	if err := settingService.SetCertFile(""); err != nil {
+		t.Fatalf("clear cert file failed: %v", err)
+	}
+	if err := settingService.SetKeyFile(""); err != nil {
+		t.Fatalf("clear key file failed: %v", err)
+	}
+	if err := settingService.SetWebCertStatus("uploaded"); err != nil {
+		t.Fatalf("set status failed: %v", err)
+	}
+
+	if _, err := service.EnableHTTPS(); err == nil {
+		t.Fatalf("expected enable https to fail on listener wait error")
+	}
+	if restartCount != 2 {
+		t.Fatalf("expected two restart attempts, got %d", restartCount)
+	}
+
+	certFile, err := settingService.GetCertFile()
+	if err != nil {
+		t.Fatalf("get cert file failed: %v", err)
+	}
+	keyFile, err := settingService.GetKeyFile()
+	if err != nil {
+		t.Fatalf("get key file failed: %v", err)
+	}
+	if certFile != "" || keyFile != "" {
+		t.Fatalf("expected settings rollback to restore empty cert paths")
+	}
+	status, err := settingService.GetWebCertStatus()
+	if err != nil {
+		t.Fatalf("get cert status failed: %v", err)
+	}
+	if status != "uploaded" {
+		t.Fatalf("expected uploaded status after rollback, got %s", status)
+	}
+}
+
+func TestDisableHTTPSRollsBackSettingsWhenHTTPListenerNotReady(t *testing.T) {
+	initCertTestDB(t)
+
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"panel.example.com"}, time.Now().Add(48*time.Hour))
+	if err != nil {
+		t.Fatalf("generate cert failed: %v", err)
+	}
+
+	restartCount := 0
+	service := CertService{
+		panelCertDir: t.TempDir(),
+		restartPanel: func(delay time.Duration) error {
+			restartCount++
+			return nil
+		},
+		panelPort: func() (int, error) {
+			return 54321, nil
+		},
+		waitHTTPSReadyFn: func(port int, timeout time.Duration) error {
+			return nil
+		},
+		waitHTTPReadyFn: func(port int, timeout time.Duration) error {
+			return errors.New("http probe failed")
+		},
+	}
+	if err := service.UploadCertificate(string(certPEM), string(keyPEM)); err != nil {
+		t.Fatalf("upload certificate failed: %v", err)
+	}
+
+	settingService := &SettingService{}
+	if err := settingService.SetWebCertStatus("enabled"); err != nil {
+		t.Fatalf("set status failed: %v", err)
+	}
+
+	if _, err := service.DisableHTTPS(); err == nil {
+		t.Fatalf("expected disable https to fail on listener wait error")
+	}
+	if restartCount != 2 {
+		t.Fatalf("expected two restart attempts, got %d", restartCount)
+	}
+
+	certFile, keyFile := service.managedPanelPaths()
+	currentCertFile, err := settingService.GetCertFile()
+	if err != nil {
+		t.Fatalf("get cert file failed: %v", err)
+	}
+	currentKeyFile, err := settingService.GetKeyFile()
+	if err != nil {
+		t.Fatalf("get key file failed: %v", err)
+	}
+	if currentCertFile != certFile || currentKeyFile != keyFile {
+		t.Fatalf("expected settings rollback to restore managed cert paths")
+	}
+	status, err := settingService.GetWebCertStatus()
+	if err != nil {
+		t.Fatalf("get cert status failed: %v", err)
+	}
+	if status != "enabled" {
+		t.Fatalf("expected enabled status after rollback, got %s", status)
+	}
+}
+
+func TestWaitForHTTPReady(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	port := mustTestURLPort(t, server.URL)
+	service := CertService{}
+	if err := service.waitForHTTPReady(port, 2*time.Second); err != nil {
+		t.Fatalf("wait for http ready failed: %v", err)
+	}
+}
+
+func TestWaitForHTTPSReady(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	port := mustTestURLPort(t, server.URL)
+	service := CertService{}
+	if err := service.waitForHTTPSReady(port, 2*time.Second); err != nil {
+		t.Fatalf("wait for https ready failed: %v", err)
+	}
+}
+
+func TestWaitForReadyTimeout(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve local port failed: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close reserved listener failed: %v", err)
+	}
+
+	service := CertService{}
+	if err := service.waitForHTTPReady(port, time.Second); err == nil {
+		t.Fatalf("expected http readiness probe to time out")
+	}
+	if err := service.waitForHTTPSReady(port, time.Second); err == nil {
+		t.Fatalf("expected https readiness probe to time out")
+	}
+}
+
 func generateSelfSignedCert(dnsNames []string, notAfter time.Time) ([]byte, []byte, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -262,4 +447,18 @@ func generateSelfSignedCert(dnsNames []string, notAfter time.Time) ([]byte, []by
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)})
 	return certPEM, keyPEM, nil
+}
+
+func mustTestURLPort(t *testing.T, rawURL string) int {
+	t.Helper()
+
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("parse test url failed: %v", err)
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil {
+		t.Fatalf("parse test port failed: %v", err)
+	}
+	return port
 }

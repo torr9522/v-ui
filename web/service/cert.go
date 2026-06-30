@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -18,16 +19,22 @@ import (
 )
 
 const (
-	defaultPanelCertDir  = "/usr/local/x-ui/cert"
-	defaultPanelCertFile = defaultPanelCertDir + "/panel.crt"
-	defaultPanelKeyFile  = defaultPanelCertDir + "/panel.key"
-	defaultRestartDelay  = 3 * time.Second
+	defaultPanelCertDir        = "/usr/local/x-ui/cert"
+	defaultPanelCertFile       = defaultPanelCertDir + "/panel.crt"
+	defaultPanelKeyFile        = defaultPanelCertDir + "/panel.key"
+	defaultRestartDelay        = 3 * time.Second
+	defaultListenerWaitTimeout = 15 * time.Second
+	defaultListenerRetryDelay  = 500 * time.Millisecond
+	defaultProbeTimeout        = 2 * time.Second
 )
 
 type CertService struct {
-	panelCertDir string
-	restartPanel func(time.Duration) error
-	publicIPs    func() []string
+	panelCertDir     string
+	restartPanel     func(time.Duration) error
+	publicIPs        func() []string
+	panelPort        func() (int, error)
+	waitHTTPSReadyFn func(int, time.Duration) error
+	waitHTTPReadyFn  func(int, time.Duration) error
 }
 
 type certInfo struct {
@@ -276,6 +283,10 @@ func (s *CertService) EnableHTTPS() (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	port, err := s.getPanelPort(settingService)
+	if err != nil {
+		return false, err
+	}
 
 	certFile, keyFile, err := s.resolveEnablePaths(settingService)
 	if err != nil {
@@ -313,6 +324,15 @@ func (s *CertService) EnableHTTPS() (bool, error) {
 		restartRestoreErr := s.restart(defaultRestartDelay)
 		return false, common.Combine(err, restoreErr, restartRestoreErr)
 	}
+	if err := s.waitForHTTPSReady(port, defaultListenerWaitTimeout); err != nil {
+		return false, s.rollbackListenerState(
+			settingService,
+			snapshot,
+			port,
+			errors.New("HTTPS listener not ready after restart"),
+			err,
+		)
+	}
 
 	return true, nil
 }
@@ -320,6 +340,10 @@ func (s *CertService) EnableHTTPS() (bool, error) {
 func (s *CertService) DisableHTTPS() (bool, error) {
 	settingService := &SettingService{}
 	snapshot, err := s.captureSettings(settingService)
+	if err != nil {
+		return false, err
+	}
+	port, err := s.getPanelPort(settingService)
 	if err != nil {
 		return false, err
 	}
@@ -358,6 +382,15 @@ func (s *CertService) DisableHTTPS() (bool, error) {
 		restoreErr := s.restoreSettings(settingService, snapshot)
 		restartRestoreErr := s.restart(defaultRestartDelay)
 		return false, common.Combine(err, restoreErr, restartRestoreErr)
+	}
+	if err := s.waitForHTTPReady(port, defaultListenerWaitTimeout); err != nil {
+		return false, s.rollbackListenerState(
+			settingService,
+			snapshot,
+			port,
+			errors.New("HTTP listener not ready after restart"),
+			err,
+		)
 	}
 
 	return true, nil
@@ -478,6 +511,81 @@ func (s *CertService) restart(delay time.Duration) error {
 		return s.restartPanel(delay)
 	}
 	return (&PanelService{}).RestartPanel(delay)
+}
+
+func (s *CertService) getPanelPort(settingService *SettingService) (int, error) {
+	if s.panelPort != nil {
+		return s.panelPort()
+	}
+	port, err := settingService.GetPort()
+	if err != nil {
+		return 0, err
+	}
+	if port <= 0 {
+		return 0, errors.New("invalid panel port")
+	}
+	return port, nil
+}
+
+func (s *CertService) waitForHTTPSReady(port int, timeout time.Duration) error {
+	if s.waitHTTPSReadyFn != nil {
+		return s.waitHTTPSReadyFn(port, timeout)
+	}
+	addr, err := loopbackAddr(port)
+	if err != nil {
+		return err
+	}
+	dialer := &net.Dialer{Timeout: defaultProbeTimeout}
+	return waitForListener(timeout, func() error {
+		conn, err := tls.DialWithDialer(dialer, "tcp", addr, &tls.Config{InsecureSkipVerify: true})
+		if err != nil {
+			return err
+		}
+		return conn.Close()
+	})
+}
+
+func (s *CertService) waitForHTTPReady(port int, timeout time.Duration) error {
+	if s.waitHTTPReadyFn != nil {
+		return s.waitHTTPReadyFn(port, timeout)
+	}
+	addr, err := loopbackAddr(port)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{
+		Timeout: defaultProbeTimeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	url := "http://" + addr + "/"
+	return waitForListener(timeout, func() error {
+		resp, err := client.Get(url)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1))
+		return nil
+	})
+}
+
+func (s *CertService) rollbackListenerState(settingService *SettingService, snapshot *certSettingsSnapshot, port int, reason error, cause error) error {
+	restoreErr := s.restoreSettings(settingService, snapshot)
+	restartRestoreErr := s.restart(defaultRestartDelay)
+	var waitRestoreErr error
+	if restartRestoreErr == nil {
+		waitRestoreErr = s.waitForSnapshotReady(snapshot, port, defaultListenerWaitTimeout)
+	}
+	return common.Combine(reason, cause, restoreErr, restartRestoreErr, waitRestoreErr)
+}
+
+func (s *CertService) waitForSnapshotReady(snapshot *certSettingsSnapshot, port int, timeout time.Duration) error {
+	if snapshot != nil && snapshot.certFile != "" && snapshot.keyFile != "" {
+		return s.waitForHTTPSReady(port, timeout)
+	}
+	return s.waitForHTTPReady(port, timeout)
 }
 
 func (s *CertService) lookupPublicServerIPs() []string {
@@ -655,6 +763,29 @@ func getPublicServerIPs() []string {
 	return values
 }
 
+func waitForListener(timeout time.Duration, probe func() error) error {
+	if timeout <= 0 {
+		return errors.New("listener wait timeout must be positive")
+	}
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		if err := probe(); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(defaultListenerRetryDelay)
+	}
+	if lastErr == nil {
+		lastErr = errors.New("listener probe failed")
+	}
+	return lastErr
+}
+
 func hostname() string {
 	name, err := os.Hostname()
 	if err != nil {
@@ -669,6 +800,13 @@ func fileExists(path string) bool {
 	}
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func loopbackAddr(port int) (string, error) {
+	if port <= 0 {
+		return "", errors.New("invalid panel port")
+	}
+	return fmt.Sprintf("127.0.0.1:%d", port), nil
 }
 
 func containsString(items []string, target string) bool {
