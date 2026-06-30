@@ -27,6 +27,13 @@ var defaultValueMap = map[string]string{
 	"webPort":                 "54321",
 	"webCertFile":             "",
 	"webKeyFile":              "",
+	"webDomain":               "",
+	"webCertStatus":           "none",
+	"webCertExpireAt":         "0",
+	"webCertIssuer":           "",
+	"webCertAutoRenew":        "false",
+	"webCertMode":             "none",
+	"webCertProvider":         "",
 	"secret":                  random.Seq(32),
 	"webBasePath":             "/",
 	"timeLocation":            "Asia/Shanghai",
@@ -74,6 +81,12 @@ func (s *SettingService) GetAllSetting() (*entity.AllSetting, error) {
 		switch t := fieldV.Interface().(type) {
 		case int:
 			n, err := strconv.ParseInt(value, 10, 32)
+			if err != nil {
+				return err
+			}
+			fieldV.SetInt(n)
+		case int64:
+			n, err := strconv.ParseInt(value, 10, 64)
 			if err != nil {
 				return err
 			}
@@ -175,6 +188,18 @@ func (s *SettingService) setInt(key string, value int) error {
 	return s.setString(key, strconv.Itoa(value))
 }
 
+func (s *SettingService) getInt64(key string) (int64, error) {
+	str, err := s.getString(key)
+	if err != nil {
+		return 0, err
+	}
+	return strconv.ParseInt(str, 10, 64)
+}
+
+func (s *SettingService) setInt64(key string, value int64) error {
+	return s.setString(key, strconv.FormatInt(value, 10))
+}
+
 func (s *SettingService) getBool(key string) (bool, error) {
 	str, err := s.getString(key)
 	if err != nil {
@@ -209,6 +234,62 @@ func (s *SettingService) GetCertFile() (string, error) {
 
 func (s *SettingService) GetKeyFile() (string, error) {
 	return s.getString("webKeyFile")
+}
+
+func (s *SettingService) GetWebDomain() (string, error) {
+	return s.getString("webDomain")
+}
+
+func (s *SettingService) SetWebDomain(domain string) error {
+	return s.setString("webDomain", domain)
+}
+
+func (s *SettingService) GetWebCertStatus() (string, error) {
+	return s.getString("webCertStatus")
+}
+
+func (s *SettingService) SetWebCertStatus(status string) error {
+	return s.setString("webCertStatus", status)
+}
+
+func (s *SettingService) GetWebCertExpireAt() (int64, error) {
+	return s.getInt64("webCertExpireAt")
+}
+
+func (s *SettingService) SetWebCertExpireAt(expireAt int64) error {
+	return s.setInt64("webCertExpireAt", expireAt)
+}
+
+func (s *SettingService) GetWebCertIssuer() (string, error) {
+	return s.getString("webCertIssuer")
+}
+
+func (s *SettingService) SetWebCertIssuer(issuer string) error {
+	return s.setString("webCertIssuer", issuer)
+}
+
+func (s *SettingService) GetWebCertAutoRenew() (bool, error) {
+	return s.getBool("webCertAutoRenew")
+}
+
+func (s *SettingService) SetWebCertAutoRenew(autoRenew bool) error {
+	return s.setString("webCertAutoRenew", strconv.FormatBool(autoRenew))
+}
+
+func (s *SettingService) GetWebCertMode() (string, error) {
+	return s.getString("webCertMode")
+}
+
+func (s *SettingService) SetWebCertMode(mode string) error {
+	return s.setString("webCertMode", mode)
+}
+
+func (s *SettingService) GetWebCertProvider() (string, error) {
+	return s.getString("webCertProvider")
+}
+
+func (s *SettingService) SetWebCertProvider(provider string) error {
+	return s.setString("webCertProvider", provider)
 }
 
 func (s *SettingService) GetSecret() ([]byte, error) {

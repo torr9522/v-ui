@@ -11,6 +11,7 @@ type XUIController struct {
 	outboundController *OutboundController
 	routingController  *RoutingController
 	settingController  *SettingController
+	certController     *CertController
 	accessIPController *AccessIPController
 }
 
@@ -28,6 +29,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/inbounds", a.inbounds)
 	g.GET("/outbounds", a.outbounds)
 	g.GET("/routing", a.routing)
+	g.GET("/cert", a.cert)
 	g.GET("/access-ips", a.accessIPs)
 	g.GET("/setting", a.setting)
 
@@ -35,6 +37,7 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	a.outboundController = NewOutboundController(g)
 	a.routingController = NewRoutingController(g)
 	a.settingController = NewSettingController(g)
+	a.certController = NewCertController(g)
 	a.accessIPController = NewAccessIPController(g)
 }
 
@@ -52,6 +55,10 @@ func (a *XUIController) outbounds(c *gin.Context) {
 
 func (a *XUIController) routing(c *gin.Context) {
 	html(c, "routing.html", "C-UI - 路由", nil)
+}
+
+func (a *XUIController) cert(c *gin.Context) {
+	html(c, "cert.html", "V-UI - 域名证书", nil)
 }
 
 func (a *XUIController) accessIPs(c *gin.Context) {

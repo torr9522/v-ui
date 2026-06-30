@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content {
+            margin: 24px 16px;
+        }
+    }
+
+    .status-grid .ant-descriptions-item-label {
+        width: 180px;
+    }
+
+    .mono-text {
+        font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace;
+        word-break: break-all;
+    }
+
+    .warning-item + .warning-item {
+        margin-top: 8px;
+    }
+</style>
+<body>
+<a-layout id="app" v-cloak>
+    {{ template "commonSider" . }}
+    <a-layout id="content-layout">
+        <a-layout-content>
+            <a-spin :spinning="spinning" :delay="300" tip="loading">
+                <a-alert
+                    type="info"
+                    show-icon
+                    message="本阶段仅支持域名记录和解析检查，暂未申请/启用证书。"
+                    style="margin-bottom: 20px;">
+                </a-alert>
+
+                <a-row :gutter="16">
+                    <a-col :xs="24" :lg="14">
+                        <a-card title="当前状态" hoverable>
+                            <a-descriptions bordered :column="1" size="small" class="status-grid">
+                                <a-descriptions-item label="当前域名">[[ status.webDomain || '-' ]]</a-descriptions-item>
+                                <a-descriptions-item label="证书状态">
+                                    <a-tag :color="statusTagColor(status.webCertStatus)">[[ status.webCertStatus || 'none' ]]</a-tag>
+                                </a-descriptions-item>
+                                <a-descriptions-item label="证书模式">[[ status.webCertMode || 'none' ]]</a-descriptions-item>
+                                <a-descriptions-item label="证书提供方">[[ status.webCertProvider || '-' ]]</a-descriptions-item>
+                                <a-descriptions-item label="自动续期">[[ status.webCertAutoRenew ? '开启' : '关闭' ]]</a-descriptions-item>
+                                <a-descriptions-item label="签发者">[[ status.webCertIssuer || '-' ]]</a-descriptions-item>
+                                <a-descriptions-item label="过期时间">[[ formatExpireAt(status.webCertExpireAt) ]]</a-descriptions-item>
+                                <a-descriptions-item label="webCertFile">
+                                    <span class="mono-text">[[ status.webCertFile || '-' ]]</span>
+                                </a-descriptions-item>
+                                <a-descriptions-item label="webKeyFile">
+                                    <span class="mono-text">[[ status.webKeyFile || '-' ]]</span>
+                                </a-descriptions-item>
+                            </a-descriptions>
+
+                            <template v-if="status.warnings && status.warnings.length">
+                                <a-divider orientation="left">状态提示</a-divider>
+                                <a-alert
+                                    v-for="(warning, index) in status.warnings"
+                                    :key="`status-warning-${index}`"
+                                    class="warning-item"
+                                    type="warning"
+                                    show-icon
+                                    :message="warning">
+                                </a-alert>
+                            </template>
+                        </a-card>
+                    </a-col>
+
+                    <a-col :xs="24" :lg="10">
+                        <a-card title="域名设置" hoverable>
+                            <a-form layout="vertical">
+                                <a-form-item label="面板域名">
+                                    <a-input v-model.trim="domainForm.domain" placeholder="panel.example.com"></a-input>
+                                </a-form-item>
+                                <a-space>
+                                    <a-button type="primary" @click="saveDomain">保存域名</a-button>
+                                    <a-button @click="checkDomain">检查解析</a-button>
+                                    <a-button @click="clearDomain">清空</a-button>
+                                </a-space>
+                            </a-form>
+                        </a-card>
+
+                        <a-card title="解析检查结果" hoverable style="margin-top: 16px;">
+                            <a-descriptions bordered :column="1" size="small">
+                                <a-descriptions-item label="检查域名">[[ checkResult.domain || '-' ]]</a-descriptions-item>
+                                <a-descriptions-item label="解析记录">
+                                    <span class="mono-text">[[ formatList(checkResult.records) ]]</span>
+                                </a-descriptions-item>
+                                <a-descriptions-item label="本机公网 IP">
+                                    <span class="mono-text">[[ formatList(checkResult.serverIps) ]]</span>
+                                </a-descriptions-item>
+                                <a-descriptions-item label="是否匹配">
+                                    <a-tag :color="checkResult.matched ? 'green' : 'orange'">[[ checkResult.matched ? 'matched' : 'not matched' ]]</a-tag>
+                                </a-descriptions-item>
+                            </a-descriptions>
+
+                            <template v-if="checkResult.warnings && checkResult.warnings.length">
+                                <a-divider orientation="left">检查提示</a-divider>
+                                <a-alert
+                                    v-for="(warning, index) in checkResult.warnings"
+                                    :key="`check-warning-${index}`"
+                                    class="warning-item"
+                                    type="warning"
+                                    show-icon
+                                    :message="warning">
+                                </a-alert>
+                            </template>
+                        </a-card>
+                    </a-col>
+                </a-row>
+            </a-spin>
+        </a-layout-content>
+    </a-layout>
+</a-layout>
+{{template "js" .}}
+<script>
+    const app = new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#app',
+        data: {
+            siderDrawer,
+            spinning: false,
+            status: {
+                webDomain: '',
+                webCertFile: '',
+                webKeyFile: '',
+                webCertStatus: 'none',
+                webCertExpireAt: 0,
+                webCertIssuer: '',
+                webCertAutoRenew: false,
+                webCertMode: 'none',
+                webCertProvider: '',
+                warnings: [],
+            },
+            domainForm: {
+                domain: '',
+            },
+            checkResult: {
+                domain: '',
+                records: [],
+                serverIps: [],
+                matched: false,
+                warnings: [],
+            },
+        },
+        methods: {
+            loading(spinning = true) {
+                this.spinning = spinning;
+            },
+            async getStatus() {
+                this.loading(true);
+                const msg = await HttpUtil.post('/xui/cert/status');
+                this.loading(false);
+                if (!msg.success) {
+                    return;
+                }
+                this.status = Object.assign({}, this.status, msg.obj || {});
+                this.domainForm.domain = this.status.webDomain || '';
+            },
+            async saveDomain() {
+                this.loading(true);
+                const msg = await HttpUtil.post('/xui/cert/setDomain', {
+                    domain: this.domainForm.domain,
+                });
+                this.loading(false);
+                if (!msg.success) {
+                    return;
+                }
+                this.status = Object.assign({}, this.status, msg.obj || {});
+                this.domainForm.domain = this.status.webDomain || '';
+            },
+            async clearDomain() {
+                this.domainForm.domain = '';
+                await this.saveDomain();
+            },
+            async checkDomain() {
+                const domain = (this.domainForm.domain || '').trim();
+                if (!domain) {
+                    this.$message.warning('请先输入域名');
+                    return;
+                }
+                this.loading(true);
+                const msg = await HttpUtil.post('/xui/cert/checkDomain', { domain });
+                this.loading(false);
+                if (!msg.success) {
+                    return;
+                }
+                this.checkResult = Object.assign({}, this.checkResult, msg.obj || {});
+            },
+            formatExpireAt(value) {
+                if (!value) {
+                    return '-';
+                }
+                return moment.unix(value).format('YYYY-MM-DD HH:mm:ss');
+            },
+            formatList(items) {
+                if (!items || items.length === 0) {
+                    return '-';
+                }
+                return items.join(', ');
+            },
+            statusTagColor(status) {
+                switch (status) {
+                    case 'ready':
+                        return 'green';
+                    case 'expired':
+                        return 'red';
+                    case 'unknown':
+                        return 'orange';
+                    default:
+                        return 'blue';
+                }
+            },
+        },
+        async mounted() {
+            await this.getStatus();
+        },
+    });
+</script>
+</body>
+</html>

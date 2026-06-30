@@ -210,6 +210,14 @@ class AllSetting {
         this.webCertFile = "";
         this.webKeyFile = "";
         this.webBasePath = "/";
+        this.webDomain = "";
+
+        this.webCertStatus = "none";
+        this.webCertExpireAt = 0;
+        this.webCertIssuer = "";
+        this.webCertAutoRenew = false;
+        this.webCertMode = "none";
+        this.webCertProvider = "";
 
         this.xrayTemplateConfig = "";
         this.managedOutboundsRouting = false;

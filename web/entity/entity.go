@@ -32,6 +32,14 @@ type AllSetting struct {
 	WebCertFile string `json:"webCertFile" form:"webCertFile"`
 	WebKeyFile  string `json:"webKeyFile" form:"webKeyFile"`
 	WebBasePath string `json:"webBasePath" form:"webBasePath"`
+	WebDomain   string `json:"webDomain" form:"webDomain"`
+
+	WebCertStatus    string `json:"webCertStatus" form:"webCertStatus"`
+	WebCertExpireAt  int64  `json:"webCertExpireAt" form:"webCertExpireAt"`
+	WebCertIssuer    string `json:"webCertIssuer" form:"webCertIssuer"`
+	WebCertAutoRenew bool   `json:"webCertAutoRenew" form:"webCertAutoRenew"`
+	WebCertMode      string `json:"webCertMode" form:"webCertMode"`
+	WebCertProvider  string `json:"webCertProvider" form:"webCertProvider"`
 
 	XrayTemplateConfig      string `json:"xrayTemplateConfig" form:"xrayTemplateConfig"`
 	ManagedOutboundsRouting bool   `json:"managedOutboundsRouting" form:"managedOutboundsRouting"`
@@ -63,6 +71,13 @@ func (s *AllSetting) CheckValid() error {
 	}
 	if !strings.HasSuffix(s.WebBasePath, "/") {
 		s.WebBasePath += "/"
+	}
+
+	s.WebDomain = strings.TrimSpace(s.WebDomain)
+	if s.WebDomain != "" {
+		if strings.Contains(s.WebDomain, "://") || strings.Contains(s.WebDomain, "/") || strings.Contains(s.WebDomain, " ") {
+			return common.NewError("web domain is invalid:", s.WebDomain)
+		}
 	}
 
 	xrayConfig := &xray.Config{}

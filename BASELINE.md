@@ -1,45 +1,37 @@
-## C-UI Baseline
+## V-UI Baseline
 
-- Source repository: https://github.com/torr9522/c-ui
+- Source project: `torr9522/c-ui`
+- Source repository: `https://github.com/torr9522/c-ui`
 - Source branch: `c-ui`
-- Source commit: `2768ef19ba3587783c139495e5f722bed157ba28`
-- New project name: `c-ui`
-- Display name: `C-UI`
-- Current phase: `Phase 1.5 Baseline Imported`
-- Current remote: `none`
-- Current strategy: `Brand independent, Runtime frozen`
-- Current goal: start `Outbounds` architecture and database design without runtime-layer renaming
+- Source commit: `f4076be4ec0d2fbce0ea2d722eb4da13e83adaa3` (`f4076be`)
+- New project name: `v-ui`
+- Display name: `V-UI`
 
-### Not Changed In This Phase
+## Runtime Freeze
 
-- `go.mod` module
-- import path
-- `/xui` route
-- systemd service
-- install directory
-- database path
-- runtime scripts
+- Runtime binary remains `x-ui`
+- systemd service remains `x-ui.service`
+- CLI command remains `x-ui`
+- Install directory remains `/usr/local/x-ui`
+- Web route remains `/xui`
+- Go module name and import path stay unchanged for now
 
-### Runtime Freeze
+## Current Product Base
 
-Unless the user explicitly issues `解除 Runtime Freeze`, the following remain frozen:
+- Outbound CRUD
+- Routing CRUD
+- AI Traffic Split template
+- `managedOutboundsRouting`
+- Source install bootstrap with Go + CGO toolchain handling
 
-- `go.mod`
-- import path
-- `/xui`
-- `x-ui.service`
-- `x-ui` command
-- database tables
-- setting keys
-- `install.sh`
-- `x-ui.sh`
-- Xray config schema
+## New Project Goal
 
-### Development Priority
+Build `v-ui` as an isolated successor project on top of the current `c-ui` baseline, while keeping `x-ui` runtime compatibility, and add domain / certificate management inspired by `torr9522/z-ui`.
 
-1. `Outbounds`
-2. `Routing`
-3. `Template`
-4. `AI Traffic Split`
-5. `Node`
-6. `Runtime API`
+## Scope Of First Round
+
+- Project isolation only
+- Read-only audit of `z-ui` certificate/domain logic
+- Migration design for `v-ui`
+- No feature code yet
+- No remote configured in this local repository
