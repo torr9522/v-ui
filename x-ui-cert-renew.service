@@ -1,0 +1,9 @@
+[Unit]
+Description=x-ui Certificate Renewal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/x-ui cert-renew
+

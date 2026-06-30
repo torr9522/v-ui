@@ -10,6 +10,11 @@ XUI_LOCAL_INSTALL_SCRIPT="/usr/local/x-ui/install.sh"
 XUI_LOCAL_SHELL_SCRIPT="/usr/local/x-ui/x-ui.sh"
 XUI_BBR_URL="${XUI_BBR_URL:-${XUI_RAW_BASE}/scripts/bbr.sh}"
 XUI_ACME_INSTALL_URL="${XUI_ACME_INSTALL_URL:-${XUI_RAW_BASE}/scripts/acme_install.sh}"
+XUI_CERT_RENEW_SERVICE="x-ui-cert-renew.service"
+XUI_CERT_RENEW_TIMER="x-ui-cert-renew.timer"
+XUI_PANEL_ACME_CERT_FILE="/usr/local/x-ui/cert/acme-panel.crt"
+XUI_PANEL_ACME_KEY_FILE="/usr/local/x-ui/cert/acme-panel.key"
+XUI_DEFAULT_DB_PATH="/etc/x-ui/x-ui.db"
 
 #consts for log check and clear,unit:M
 declare -r DEFAULT_LOG_FILE_DELETE_TRIGGER=35
@@ -799,6 +804,293 @@ disable_auto_clear_log() {
     fi
 }
 
+get_sqlite_command() {
+    if command -v sqlite3 >/dev/null 2>&1; then
+        echo "sqlite3"
+        return 0
+    fi
+    if command -v sqlite >/dev/null 2>&1; then
+        echo "sqlite"
+        return 0
+    fi
+    return 1
+}
+
+get_xui_db_path() {
+    if [[ -f "${XUI_DEFAULT_DB_PATH}" ]]; then
+        echo "${XUI_DEFAULT_DB_PATH}"
+        return 0
+    fi
+    if [[ -f "/usr/local/x-ui/x-ui.db" ]]; then
+        echo "/usr/local/x-ui/x-ui.db"
+        return 0
+    fi
+    echo "${XUI_DEFAULT_DB_PATH}"
+}
+
+sqlite_escape() {
+    printf '%s' "${1:-}" | sed "s/'/''/g"
+}
+
+setting_default_value() {
+    case "$1" in
+    webDomain | webCertFile | webKeyFile | webCertIssuer | webCertProvider)
+        echo ""
+        ;;
+    webCertStatus)
+        echo "none"
+        ;;
+    webCertMode)
+        echo "none"
+        ;;
+    webCertExpireAt)
+        echo "0"
+        ;;
+    webCertAutoRenew)
+        echo "false"
+        ;;
+    *)
+        echo ""
+        ;;
+    esac
+}
+
+setting_get_value() {
+    local key="$1"
+    local sqlite_cmd db escaped_key value
+    sqlite_cmd="$(get_sqlite_command)" || return 1
+    db="$(get_xui_db_path)"
+    [[ -f "${db}" ]] || return 1
+    escaped_key="$(sqlite_escape "${key}")"
+    value=$("${sqlite_cmd}" "${db}" "SELECT value FROM settings WHERE key='${escaped_key}' ORDER BY id DESC LIMIT 1;" 2>/dev/null)
+    if [[ -z "${value}" ]]; then
+        setting_default_value "${key}"
+    else
+        printf '%s\n' "${value}"
+    fi
+}
+
+setting_set_value() {
+    local key="$1"
+    local value="$2"
+    local sqlite_cmd db escaped_key escaped_value
+    sqlite_cmd="$(get_sqlite_command)" || return 1
+    db="$(get_xui_db_path)"
+    [[ -f "${db}" ]] || return 1
+    escaped_key="$(sqlite_escape "${key}")"
+    escaped_value="$(sqlite_escape "${value}")"
+    "${sqlite_cmd}" "${db}" <<EOF
+BEGIN TRANSACTION;
+UPDATE settings SET value='${escaped_value}' WHERE key='${escaped_key}';
+INSERT INTO settings (key, value)
+SELECT '${escaped_key}', '${escaped_value}'
+WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key='${escaped_key}');
+COMMIT;
+EOF
+}
+
+resolve_acme_sh() {
+    local candidate_bin="" candidate_home="" home_dir=""
+
+    if [[ -n "${ACMESH_HOME:-}" && -x "${ACMESH_HOME}/acme.sh" ]]; then
+        ACME_HOME_RESOLVED="${ACMESH_HOME}"
+        ACME_BIN_RESOLVED="${ACMESH_HOME}/acme.sh"
+        return 0
+    fi
+
+    for candidate_home in "/root/.acme.sh" "/.acme.sh"; do
+        if [[ -x "${candidate_home}/acme.sh" ]]; then
+            ACME_HOME_RESOLVED="${candidate_home}"
+            ACME_BIN_RESOLVED="${candidate_home}/acme.sh"
+            return 0
+        fi
+    done
+
+    home_dir="${HOME:-/root}"
+    if [[ -x "${home_dir}/.acme.sh/acme.sh" ]]; then
+        ACME_HOME_RESOLVED="${home_dir}/.acme.sh"
+        ACME_BIN_RESOLVED="${home_dir}/.acme.sh/acme.sh"
+        return 0
+    fi
+
+    candidate_bin="$(command -v acme.sh 2>/dev/null || true)"
+    if [[ -n "${candidate_bin}" ]]; then
+        candidate_home="$(cd "$(dirname "${candidate_bin}")" >/dev/null 2>&1 && pwd)"
+        if [[ "$(basename "${candidate_home}")" == ".acme.sh" ]]; then
+            ACME_HOME_RESOLVED="${candidate_home}"
+        else
+            ACME_HOME_RESOLVED=""
+        fi
+        ACME_BIN_RESOLVED="${candidate_bin}"
+        return 0
+    fi
+
+    return 1
+}
+
+run_acme_sh() {
+    if [[ -n "${ACME_HOME_RESOLVED:-}" ]]; then
+        "${ACME_BIN_RESOLVED}" --home "${ACME_HOME_RESOLVED}" "$@"
+    else
+        "${ACME_BIN_RESOLVED}" "$@"
+    fi
+}
+
+openssl_expire_epoch() {
+    local cert_file="$1"
+    local enddate=""
+    enddate="$(openssl x509 -in "${cert_file}" -noout -enddate 2>/dev/null | sed 's/^notAfter=//')"
+    [[ -n "${enddate}" ]] || return 1
+    date -u -d "${enddate}" +%s 2>/dev/null
+}
+
+openssl_issuer_name() {
+    local cert_file="$1"
+    openssl x509 -in "${cert_file}" -noout -issuer 2>/dev/null | sed 's/^issuer=//;s/^ *//'
+}
+
+is_active_panel_acme_http_cert() {
+    local mode provider cert_file key_file
+    mode="$(setting_get_value "webCertMode")" || return 1
+    provider="$(setting_get_value "webCertProvider")" || return 1
+    cert_file="$(setting_get_value "webCertFile")" || return 1
+    key_file="$(setting_get_value "webKeyFile")" || return 1
+
+    [[ "${mode}" == "acme_http" ]] || return 1
+    [[ "${provider}" == "letsencrypt" ]] || return 1
+    [[ "${cert_file}" == "${XUI_PANEL_ACME_CERT_FILE}" ]] || return 1
+    [[ "${key_file}" == "${XUI_PANEL_ACME_KEY_FILE}" ]] || return 1
+    return 0
+}
+
+restart_xui_after_cert_renew() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        LOGE "未检测到 systemctl，无法重载或重启 x-ui"
+        return 1
+    fi
+
+    if systemctl reload x-ui >/dev/null 2>&1; then
+        LOGI "x-ui 已重载"
+        return 0
+    fi
+
+    if systemctl restart x-ui >/dev/null 2>&1; then
+        LOGI "x-ui 已重启"
+        return 0
+    fi
+
+    LOGE "x-ui 重载/重启失败"
+    return 1
+}
+
+cert_renew_current_acme_http() {
+    local domain mode provider cert_file key_file renew_log expire_at issuer
+
+    mode="$(setting_get_value "webCertMode")" || {
+        LOGE "读取 webCertMode 失败"
+        return 1
+    }
+    provider="$(setting_get_value "webCertProvider")" || {
+        LOGE "读取 webCertProvider 失败"
+        return 1
+    }
+    cert_file="$(setting_get_value "webCertFile")" || {
+        LOGE "读取 webCertFile 失败"
+        return 1
+    }
+    key_file="$(setting_get_value "webKeyFile")" || {
+        LOGE "读取 webKeyFile 失败"
+        return 1
+    }
+    domain="$(setting_get_value "webDomain")" || {
+        LOGE "读取 webDomain 失败"
+        return 1
+    }
+
+    if [[ "${mode}" != "acme_http" || "${provider}" != "letsencrypt" || "${cert_file}" != "${XUI_PANEL_ACME_CERT_FILE}" || "${key_file}" != "${XUI_PANEL_ACME_KEY_FILE}" ]]; then
+        LOGI "当前活动面板证书不是 acme_http，跳过续期"
+        return 0
+    fi
+
+    if [[ -z "${domain}" ]]; then
+        LOGE "当前未配置 webDomain，跳过续期"
+        return 0
+    fi
+
+    if ! resolve_acme_sh; then
+        LOGE "未找到 acme.sh，可执行续期链路未安装"
+        return 0
+    fi
+
+    LOGI "开始续期当前活动面板证书: ${domain}"
+    renew_log="/tmp/x-ui-cert-renew.log"
+    rm -f "${renew_log}"
+    if ! run_acme_sh --renew -d "${domain}" 2>&1 | tee "${renew_log}"; then
+        if grep -q "Skipping. Next renewal time" "${renew_log}" 2>/dev/null; then
+            LOGI "CA 续期窗口未到，跳过"
+            return 0
+        fi
+        LOGE "acme.sh 续期失败"
+        return 1
+    fi
+
+    if ! run_acme_sh --install-cert -d "${domain}" --fullchain-file "${XUI_PANEL_ACME_CERT_FILE}" --key-file "${XUI_PANEL_ACME_KEY_FILE}"; then
+        LOGE "安装续期后的面板证书失败"
+        return 1
+    fi
+
+    chmod 0644 "${XUI_PANEL_ACME_CERT_FILE}" || return 1
+    chmod 0600 "${XUI_PANEL_ACME_KEY_FILE}" || return 1
+
+    expire_at="$(openssl_expire_epoch "${XUI_PANEL_ACME_CERT_FILE}")" || {
+        LOGE "读取续期后证书到期时间失败"
+        return 1
+    }
+    issuer="$(openssl_issuer_name "${XUI_PANEL_ACME_CERT_FILE}")" || {
+        LOGE "读取续期后证书签发者失败"
+        return 1
+    }
+
+    if ! is_active_panel_acme_http_cert; then
+        LOGI "续期完成，但当前活动面板证书已变更，跳过设置更新与重载"
+        return 0
+    fi
+
+    setting_set_value "webCertStatus" "issued" || {
+        LOGE "更新 webCertStatus 失败"
+        return 1
+    }
+    setting_set_value "webCertExpireAt" "${expire_at}" || {
+        LOGE "更新 webCertExpireAt 失败"
+        return 1
+    }
+    setting_set_value "webCertIssuer" "${issuer}" || {
+        LOGE "更新 webCertIssuer 失败"
+        return 1
+    }
+
+    restart_xui_after_cert_renew
+}
+
+cert_renew_status() {
+    if ! command -v systemctl >/dev/null 2>&1; then
+        LOGE "未检测到 systemctl，无法查看定时器状态"
+        return 1
+    fi
+
+    echo "Timer: ${XUI_CERT_RENEW_TIMER}"
+    systemctl show "${XUI_CERT_RENEW_TIMER}" \
+        --property=ActiveState \
+        --property=UnitFileState \
+        --property=LastTriggerUSec \
+        --property=NextElapseUSecRealtime \
+        --no-pager 2>/dev/null || true
+    echo ""
+    systemctl list-timers --all "${XUI_CERT_RENEW_TIMER}" --no-pager 2>/dev/null || true
+    echo ""
+    journalctl -u "${XUI_CERT_RENEW_SERVICE}" -n 50 --no-pager 2>/dev/null || true
+}
+
 show_usage() {
     echo "x-ui 管理脚本使用方法: "
     echo "------------------------------------------"
@@ -817,6 +1109,8 @@ show_usage() {
     echo "x-ui clear        - 清除 x-ui 日志"
     echo "x-ui geo          - 更新 x-ui geo数据"
     echo "x-ui cron         - 配置 x-ui 定时任务"
+    echo "x-ui cert-renew   - 续期当前活动 ACME HTTP-01 面板证书"
+    echo "x-ui cert-renew-status - 查看证书续期 timer 状态"
     echo "------------------------------------------"
 }
 
@@ -954,6 +1248,12 @@ if [[ $# > 0 ]]; then
         ;;
     "cron")
         check_install && cron_jobs
+        ;;
+    "cert-renew")
+        check_install 0 && cert_renew_current_acme_http
+        ;;
+    "cert-renew-status")
+        check_install 0 && cert_renew_status
         ;;
     *) show_usage ;;
     esac

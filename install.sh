@@ -524,6 +524,35 @@ install_portlimit_sync() {
     XUI_PORTLIMIT_FORCE_REBUILD=1 systemctl start xui-portlimit-sync.service || true
 }
 
+install_cert_renew_timer() {
+    local base_url="${XUI_RAW_BASE}"
+    local script_dir="${INSTALL_SCRIPT_DIR}"
+
+    if ! command -v systemctl >/dev/null 2>&1; then
+        warn_msg "未检测到 systemctl，跳过 x-ui 证书续期 timer 安装。"
+        return 0
+    fi
+
+    if ! copy_or_download "${script_dir}/x-ui-cert-renew.service" "/usr/local/x-ui/x-ui-cert-renew.service" "/etc/systemd/system/x-ui-cert-renew.service" "${base_url}/x-ui-cert-renew.service"; then
+        echo -e "${red}安装 x-ui-cert-renew.service 失败${plain}"
+        return 1
+    fi
+
+    if ! copy_or_download "${script_dir}/x-ui-cert-renew.timer" "/usr/local/x-ui/x-ui-cert-renew.timer" "/etc/systemd/system/x-ui-cert-renew.timer" "${base_url}/x-ui-cert-renew.timer"; then
+        echo -e "${red}安装 x-ui-cert-renew.timer 失败${plain}"
+        return 1
+    fi
+
+    if ! systemctl daemon-reload; then
+        echo -e "${red}systemd 重新加载失败${plain}"
+        return 1
+    fi
+    if ! systemctl enable --now x-ui-cert-renew.timer; then
+        echo -e "${red}启用 x-ui-cert-renew.timer 失败${plain}"
+        return 1
+    fi
+}
+
 install_access_logrotate() {
     command -v logrotate >/dev/null 2>&1 || return 0
 
@@ -729,6 +758,9 @@ install_x-ui() {
     if ! install_portlimit_sync; then
         warn_msg "xui-portlimit-sync 安装失败，不影响面板启动，可稍后手动重试。"
     fi
+    if ! install_cert_renew_timer; then
+        warn_msg "x-ui 证书续期 timer 安装失败，不影响面板启动，可稍后手动重试。"
+    fi
     install_access_logrotate
 
     # ── 安装完成，展示面板信息 ─────────────────────────────────────────────────
@@ -762,6 +794,8 @@ install_x-ui() {
     echo -e "  │  x-ui install      安装 x-ui 面板"
     echo -e "  │  x-ui uninstall    卸载 x-ui 面板"
     echo -e "  │  x-ui geo          更新 geo 数据"
+    echo -e "  │  x-ui cert-renew   续期当前活动面板证书"
+    echo -e "  │  x-ui cert-renew-status 查看证书续期 timer"
     echo -e "  └─────────────────────────────────────────────┘"
     echo -e "${green}================================================================${plain}"
     echo -e ""
