@@ -226,6 +226,14 @@
                 this.status = Object.assign({}, this.status, status || {});
                 this.domainForm.domain = this.status.webDomain || '';
             },
+            redirectToScheme(protocol, message) {
+                if (window.location.protocol === protocol) {
+                    return;
+                }
+                const target = `${protocol}//${window.location.host}${window.location.pathname}${window.location.search}${window.location.hash}`;
+                this.$message.info(message);
+                window.setTimeout(() => window.location.replace(target), 300);
+            },
             openUploadModal() {
                 this.uploadModal.visible = true;
             },
@@ -255,6 +263,7 @@
                     return;
                 }
                 this.applyStatus(msg.obj ? msg.obj.status : null);
+                this.redirectToScheme('https:', '面板已切换到 HTTPS，正在跳转到安全地址');
             },
             async disableHTTPS() {
                 this.loading(true);
@@ -264,6 +273,7 @@
                     return;
                 }
                 this.applyStatus(msg.obj ? msg.obj.status : null);
+                this.redirectToScheme('http:', '面板已切回 HTTP，正在跳转到当前地址');
             },
             async saveDomain() {
                 this.loading(true);

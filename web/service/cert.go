@@ -561,11 +561,19 @@ func (s *CertService) waitForHTTPReady(port int, timeout time.Duration) error {
 	}
 	url := "http://" + addr + "/"
 	return waitForListener(timeout, func() error {
+		// If a TLS handshake still succeeds, the panel has not switched back to HTTP-only.
+		if err := s.waitForHTTPSReady(port, defaultProbeTimeout); err == nil {
+			return errors.New("https listener still active")
+		}
+
 		resp, err := client.Get(url)
 		if err != nil {
 			return err
 		}
 		defer resp.Body.Close()
+		if isHTTPSRedirectResponse(resp) {
+			return errors.New("http endpoint still redirects to https")
+		}
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1))
 		return nil
 	})
@@ -800,6 +808,19 @@ func fileExists(path string) bool {
 	}
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+func isHTTPSRedirectResponse(resp *http.Response) bool {
+	if resp == nil {
+		return false
+	}
+	switch resp.StatusCode {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+	default:
+		return false
+	}
+	location := strings.TrimSpace(resp.Header.Get("Location"))
+	return strings.HasPrefix(strings.ToLower(location), "https://")
 }
 
 func loopbackAddr(port int) (string, error) {

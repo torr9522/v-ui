@@ -383,6 +383,19 @@ func TestWaitForHTTPReady(t *testing.T) {
 	}
 }
 
+func TestWaitForHTTPReadyRejectsHTTPSRedirect(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://127.0.0.1"+r.URL.Path, http.StatusTemporaryRedirect)
+	}))
+	defer server.Close()
+
+	port := mustTestURLPort(t, server.URL)
+	service := CertService{}
+	if err := service.waitForHTTPReady(port, time.Second); err == nil {
+		t.Fatalf("expected https redirect response to fail http readiness")
+	}
+}
+
 func TestWaitForHTTPSReady(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -393,6 +406,19 @@ func TestWaitForHTTPSReady(t *testing.T) {
 	service := CertService{}
 	if err := service.waitForHTTPSReady(port, 2*time.Second); err != nil {
 		t.Fatalf("wait for https ready failed: %v", err)
+	}
+}
+
+func TestWaitForHTTPReadyRejectsTLSServer(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	port := mustTestURLPort(t, server.URL)
+	service := CertService{}
+	if err := service.waitForHTTPReady(port, time.Second); err == nil {
+		t.Fatalf("expected tls server to fail http readiness")
 	}
 }
 
