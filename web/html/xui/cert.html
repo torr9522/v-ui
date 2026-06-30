@@ -15,10 +15,15 @@
     .mono-text {
         font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace;
         word-break: break-all;
+        white-space: pre-wrap;
     }
 
     .warning-item + .warning-item {
         margin-top: 8px;
+    }
+
+    .cert-actions .ant-btn + .ant-btn {
+        margin-left: 8px;
     }
 </style>
 <body>
@@ -30,14 +35,24 @@
                 <a-alert
                     type="info"
                     show-icon
-                    message="本阶段仅支持域名记录和解析检查，暂未申请/启用证书。"
+                    message="本阶段为手动证书管理：支持上传证书、启用 HTTPS、禁用 HTTPS；暂不包含 ACME 自动申请。"
                     style="margin-bottom: 20px;">
                 </a-alert>
 
                 <a-row :gutter="16">
                     <a-col :xs="24" :lg="14">
-                        <a-card title="当前状态" hoverable>
+                        <a-card hoverable>
+                            <div slot="title" class="cert-actions">
+                                <a-button type="primary" icon="upload" @click="openUploadModal">上传证书</a-button>
+                                <a-button icon="safety" @click="enableHTTPS">启用 HTTPS</a-button>
+                                <a-button icon="disconnect" @click="disableHTTPS">禁用 HTTPS</a-button>
+                                <a-button icon="reload" @click="getStatus">刷新</a-button>
+                            </div>
+
                             <a-descriptions bordered :column="1" size="small" class="status-grid">
+                                <a-descriptions-item label="HTTPS 状态">
+                                    <a-tag :color="status.httpsActive ? 'green' : 'orange'">[[ status.httpsActive ? 'active' : 'inactive' ]]</a-tag>
+                                </a-descriptions-item>
                                 <a-descriptions-item label="当前域名">[[ status.webDomain || '-' ]]</a-descriptions-item>
                                 <a-descriptions-item label="证书状态">
                                     <a-tag :color="statusTagColor(status.webCertStatus)">[[ status.webCertStatus || 'none' ]]</a-tag>
@@ -45,12 +60,20 @@
                                 <a-descriptions-item label="证书模式">[[ status.webCertMode || 'none' ]]</a-descriptions-item>
                                 <a-descriptions-item label="证书提供方">[[ status.webCertProvider || '-' ]]</a-descriptions-item>
                                 <a-descriptions-item label="自动续期">[[ status.webCertAutoRenew ? '开启' : '关闭' ]]</a-descriptions-item>
+                                <a-descriptions-item label="证书文件存在">[[ status.certExists ? '是' : '否' ]]</a-descriptions-item>
+                                <a-descriptions-item label="密钥文件存在">[[ status.keyExists ? '是' : '否' ]]</a-descriptions-item>
                                 <a-descriptions-item label="签发者">[[ status.webCertIssuer || '-' ]]</a-descriptions-item>
-                                <a-descriptions-item label="过期时间">[[ formatExpireAt(status.webCertExpireAt) ]]</a-descriptions-item>
-                                <a-descriptions-item label="webCertFile">
+                                <a-descriptions-item label="Subject">[[ status.subject || '-' ]]</a-descriptions-item>
+                                <a-descriptions-item label="DNSNames">
+                                    <span class="mono-text">[[ formatList(status.dnsNames) ]]</span>
+                                </a-descriptions-item>
+                                <a-descriptions-item label="生效前时间">[[ formatUnix(status.notBefore) ]]</a-descriptions-item>
+                                <a-descriptions-item label="过期时间">[[ formatUnix(status.notAfter) ]]</a-descriptions-item>
+                                <a-descriptions-item label="剩余天数">[[ formatDaysLeft(status.daysLeft, status.isExpired) ]]</a-descriptions-item>
+                                <a-descriptions-item label="证书文件路径">
                                     <span class="mono-text">[[ status.webCertFile || '-' ]]</span>
                                 </a-descriptions-item>
-                                <a-descriptions-item label="webKeyFile">
+                                <a-descriptions-item label="密钥文件路径">
                                     <span class="mono-text">[[ status.webKeyFile || '-' ]]</span>
                                 </a-descriptions-item>
                             </a-descriptions>
@@ -111,6 +134,29 @@
                         </a-card>
                     </a-col>
                 </a-row>
+
+                <a-modal v-model="uploadModal.visible"
+                         title="上传手动证书"
+                         :confirm-loading="uploadModal.confirmLoading"
+                         :mask-closable="false"
+                         ok-text="上传"
+                         cancel-text="取消"
+                         width="920px"
+                         @ok="submitUpload">
+                    <a-alert
+                        type="info"
+                        show-icon
+                        message="上传后仅保存证书文件并写入 setting，不会自动启用 HTTPS。">
+                    </a-alert>
+                    <a-form layout="vertical" style="margin-top: 16px;">
+                        <a-form-item label="Certificate PEM">
+                            <a-textarea v-model="uploadModal.form.certPem" :auto-size="{ minRows: 10, maxRows: 16 }"></a-textarea>
+                        </a-form-item>
+                        <a-form-item label="Private Key PEM">
+                            <a-textarea v-model="uploadModal.form.keyPem" :auto-size="{ minRows: 10, maxRows: 16 }"></a-textarea>
+                        </a-form-item>
+                    </a-form>
+                </a-modal>
             </a-spin>
         </a-layout-content>
     </a-layout>
@@ -125,14 +171,23 @@
             spinning: false,
             status: {
                 webDomain: '',
+                httpsActive: false,
                 webCertFile: '',
                 webKeyFile: '',
+                certExists: false,
+                keyExists: false,
                 webCertStatus: 'none',
                 webCertExpireAt: 0,
                 webCertIssuer: '',
                 webCertAutoRenew: false,
                 webCertMode: 'none',
                 webCertProvider: '',
+                subject: '',
+                dnsNames: [],
+                notBefore: 0,
+                notAfter: 0,
+                daysLeft: 0,
+                isExpired: false,
                 warnings: [],
             },
             domainForm: {
@@ -144,6 +199,14 @@
                 serverIps: [],
                 matched: false,
                 warnings: [],
+            },
+            uploadModal: {
+                visible: false,
+                confirmLoading: false,
+                form: {
+                    certPem: '',
+                    keyPem: '',
+                },
             },
         },
         methods: {
@@ -157,8 +220,50 @@
                 if (!msg.success) {
                     return;
                 }
-                this.status = Object.assign({}, this.status, msg.obj || {});
+                this.applyStatus(msg.obj);
+            },
+            applyStatus(status) {
+                this.status = Object.assign({}, this.status, status || {});
                 this.domainForm.domain = this.status.webDomain || '';
+            },
+            openUploadModal() {
+                this.uploadModal.visible = true;
+            },
+            resetUploadModal() {
+                this.uploadModal.visible = false;
+                this.uploadModal.confirmLoading = false;
+                this.uploadModal.form = {
+                    certPem: '',
+                    keyPem: '',
+                };
+            },
+            async submitUpload() {
+                this.uploadModal.confirmLoading = true;
+                const msg = await HttpUtil.post('/xui/cert/upload', this.uploadModal.form);
+                this.uploadModal.confirmLoading = false;
+                if (!msg.success) {
+                    return;
+                }
+                this.applyStatus(msg.obj ? msg.obj.status : null);
+                this.resetUploadModal();
+            },
+            async enableHTTPS() {
+                this.loading(true);
+                const msg = await HttpUtil.post('/xui/cert/enableHttps');
+                this.loading(false);
+                if (!msg.success) {
+                    return;
+                }
+                this.applyStatus(msg.obj ? msg.obj.status : null);
+            },
+            async disableHTTPS() {
+                this.loading(true);
+                const msg = await HttpUtil.post('/xui/cert/disableHttps');
+                this.loading(false);
+                if (!msg.success) {
+                    return;
+                }
+                this.applyStatus(msg.obj ? msg.obj.status : null);
             },
             async saveDomain() {
                 this.loading(true);
@@ -169,8 +274,7 @@
                 if (!msg.success) {
                     return;
                 }
-                this.status = Object.assign({}, this.status, msg.obj || {});
-                this.domainForm.domain = this.status.webDomain || '';
+                this.applyStatus(msg.obj);
             },
             async clearDomain() {
                 this.domainForm.domain = '';
@@ -190,7 +294,7 @@
                 }
                 this.checkResult = Object.assign({}, this.checkResult, msg.obj || {});
             },
-            formatExpireAt(value) {
+            formatUnix(value) {
                 if (!value) {
                     return '-';
                 }
@@ -202,16 +306,25 @@
                 }
                 return items.join(', ');
             },
+            formatDaysLeft(daysLeft, isExpired) {
+                if (isExpired) {
+                    return '已过期';
+                }
+                return `${daysLeft || 0} 天`;
+            },
             statusTagColor(status) {
                 switch (status) {
+                    case 'enabled':
                     case 'ready':
                         return 'green';
+                    case 'uploaded':
+                        return 'blue';
                     case 'expired':
                         return 'red';
                     case 'unknown':
                         return 'orange';
                     default:
-                        return 'blue';
+                        return 'default';
                 }
             },
         },

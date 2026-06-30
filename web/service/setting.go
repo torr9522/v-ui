@@ -232,8 +232,16 @@ func (s *SettingService) GetCertFile() (string, error) {
 	return s.getString("webCertFile")
 }
 
+func (s *SettingService) SetCertFile(path string) error {
+	return s.setString("webCertFile", path)
+}
+
 func (s *SettingService) GetKeyFile() (string, error) {
 	return s.getString("webKeyFile")
+}
+
+func (s *SettingService) SetKeyFile(path string) error {
+	return s.setString("webKeyFile", path)
 }
 
 func (s *SettingService) GetWebDomain() (string, error) {
