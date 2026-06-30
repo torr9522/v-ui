@@ -114,6 +114,7 @@ func (s *CertService) GetStatus() (*entity.CertStatus, error) {
 	status := &entity.CertStatus{
 		WebDomain:        webDomain,
 		HTTPSActive:      webCertFile != "" && webKeyFile != "",
+		MissingFiles:     webCertStatus == "missing",
 		WebCertFile:      displayCertFile,
 		WebKeyFile:       displayKeyFile,
 		CertExists:       fileExists(displayCertFile),
@@ -126,6 +127,12 @@ func (s *CertService) GetStatus() (*entity.CertStatus, error) {
 		WebCertProvider:  webCertProvider,
 		DNSNames:         []string{},
 		Warnings:         []string{},
+	}
+	if status.MissingFiles {
+		status.Warnings = append(status.Warnings,
+			"Configured certificate files are missing.",
+			"HTTPS has been disabled automatically.",
+		)
 	}
 
 	if !status.HTTPSActive && status.CertExists && status.KeyExists {

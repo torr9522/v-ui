@@ -33,6 +33,13 @@
         <a-layout-content>
             <a-spin :spinning="spinning" :delay="300" tip="loading">
                 <a-alert
+                    v-if="status.missingFiles"
+                    type="warning"
+                    show-icon
+                    message="检测到数据库仍配置 HTTPS，但证书文件不存在。系统已经自动切换回 HTTP。请重新上传证书，或重新申请 Let’s Encrypt。"
+                    style="margin-bottom: 20px;">
+                </a-alert>
+                <a-alert
                     type="info"
                     show-icon
                     message="当前支持手动证书与 Let’s Encrypt HTTP-01 骨架申请；需要域名解析正确且 80 端口可用。"
@@ -202,6 +209,7 @@
             status: {
                 webDomain: '',
                 httpsActive: false,
+                missingFiles: false,
                 webCertFile: '',
                 webKeyFile: '',
                 certExists: false,

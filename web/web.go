@@ -321,11 +321,7 @@ func (s *Server) Start() (err error) {
 		return err
 	}
 
-	certFile, err := s.settingService.GetCertFile()
-	if err != nil {
-		return err
-	}
-	keyFile, err := s.settingService.GetKeyFile()
+	certFile, keyFile, err := s.resolveHTTPSConfig()
 	if err != nil {
 		return err
 	}
@@ -372,6 +368,49 @@ func (s *Server) Start() (err error) {
 	}()
 
 	return nil
+}
+
+func (s *Server) resolveHTTPSConfig() (string, string, error) {
+	certFile, err := s.settingService.GetCertFile()
+	if err != nil {
+		return "", "", err
+	}
+	keyFile, err := s.settingService.GetKeyFile()
+	if err != nil {
+		return "", "", err
+	}
+
+	// Partial configuration is treated as HTTP-only; a full self-heal only applies
+	// when HTTPS is configured but the referenced certificate files are gone.
+	if certFile == "" || keyFile == "" {
+		return "", "", nil
+	}
+	if fileExists(certFile) && fileExists(keyFile) {
+		return certFile, keyFile, nil
+	}
+
+	logger.Warning("Configured HTTPS certificate not found. Falling back to HTTP mode.")
+	if err := s.disableHTTPSForMissingFiles(); err != nil {
+		return "", "", err
+	}
+	return "", "", nil
+}
+
+func (s *Server) disableHTTPSForMissingFiles() error {
+	return common.Combine(
+		s.settingService.SetCertFile(""),
+		s.settingService.SetKeyFile(""),
+		s.settingService.SetWebCertStatus("missing"),
+		s.settingService.SetWebCertMode("none"),
+	)
+}
+
+func fileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 func (s *Server) Stop() error {

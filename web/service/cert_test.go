@@ -157,6 +157,41 @@ func TestUploadCertificateWritesFilesAndPermissions(t *testing.T) {
 	}
 }
 
+func TestGetStatusReportsMissingCertificateFiles(t *testing.T) {
+	initCertTestDB(t)
+
+	settingService := &SettingService{}
+	if err := settingService.SetWebCertStatus("missing"); err != nil {
+		t.Fatalf("set status failed: %v", err)
+	}
+	if err := settingService.SetWebCertMode("none"); err != nil {
+		t.Fatalf("set mode failed: %v", err)
+	}
+	if err := settingService.SetCertFile(""); err != nil {
+		t.Fatalf("clear cert file failed: %v", err)
+	}
+	if err := settingService.SetKeyFile(""); err != nil {
+		t.Fatalf("clear key file failed: %v", err)
+	}
+
+	status, err := (&CertService{}).GetStatus()
+	if err != nil {
+		t.Fatalf("get status failed: %v", err)
+	}
+	if !status.MissingFiles {
+		t.Fatalf("expected missingFiles=true")
+	}
+	if status.HTTPSActive {
+		t.Fatalf("expected httpsActive=false")
+	}
+	if !containsString(status.Warnings, "Configured certificate files are missing.") {
+		t.Fatalf("expected missing certificate warning, got %v", status.Warnings)
+	}
+	if !containsString(status.Warnings, "HTTPS has been disabled automatically.") {
+		t.Fatalf("expected auto-disabled warning, got %v", status.Warnings)
+	}
+}
+
 func TestEnableHTTPSRollsBackSettingsOnRestartFailure(t *testing.T) {
 	initCertTestDB(t)
 

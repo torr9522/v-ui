@@ -3,6 +3,7 @@ package entity
 type CertStatus struct {
 	WebDomain        string   `json:"webDomain"`
 	HTTPSActive      bool     `json:"httpsActive"`
+	MissingFiles     bool     `json:"missingFiles"`
 	WebCertFile      string   `json:"webCertFile"`
 	WebKeyFile       string   `json:"webKeyFile"`
 	CertExists       bool     `json:"certExists"`
