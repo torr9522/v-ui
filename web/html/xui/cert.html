@@ -42,7 +42,7 @@
                 <a-alert
                     type="info"
                     show-icon
-                    message="当前支持手动证书与 Let’s Encrypt HTTP-01 骨架申请；需要域名解析正确且 80 端口可用。"
+                    message="当前支持手动证书、Let’s Encrypt HTTP-01 与 Cloudflare DNS-01；DNS-01 需要先在 Cloudflare 页面完成 Token 配置与连接测试。"
                     style="margin-bottom: 20px;">
                 </a-alert>
 
@@ -52,6 +52,7 @@
                             <div slot="title" class="cert-actions">
                                 <a-button type="primary" icon="upload" @click="openUploadModal">上传证书</a-button>
                                 <a-button icon="cloud" @click="openIssueHTTPModal">申请 Let’s Encrypt（HTTP-01）</a-button>
+                                <a-button icon="api" @click="openIssueDNSCloudflareModal">申请 Let’s Encrypt（Cloudflare DNS-01）</a-button>
                                 <a-button icon="safety" @click="enableHTTPS">启用 HTTPS</a-button>
                                 <a-button icon="disconnect" @click="disableHTTPS">禁用 HTTPS</a-button>
                                 <a-button icon="reload" @click="getStatus">刷新</a-button>
@@ -194,6 +195,35 @@
                         </a-form-item>
                     </a-form>
                 </a-modal>
+
+                <a-modal v-model="issueDNSCloudflareModal.visible"
+                         title="申请 Let’s Encrypt（Cloudflare DNS-01）"
+                         :confirm-loading="issueDNSCloudflareModal.confirmLoading"
+                         :mask-closable="false"
+                         ok-text="开始申请"
+                         cancel-text="取消"
+                         @ok="submitIssueDNSCloudflare">
+                    <a-alert
+                        type="info"
+                        show-icon
+                        message="请先在 Cloudflare 页面配置并测试 Token。DNS-01 不占用 80 端口，会临时创建 _acme-challenge TXT 记录。">
+                    </a-alert>
+                    <a-form layout="vertical" style="margin-top: 16px;">
+                        <a-form-item label="域名">
+                            <a-input v-model.trim="issueDNSCloudflareModal.form.domain" placeholder="panel.example.com"></a-input>
+                        </a-form-item>
+                        <a-form-item label="邮箱">
+                            <a-input v-model.trim="issueDNSCloudflareModal.form.email" placeholder="admin@example.com"></a-input>
+                        </a-form-item>
+                        <a-form-item label="申请模式">
+                            <a-switch
+                                checked-children="Staging"
+                                un-checked-children="Production"
+                                v-model="issueDNSCloudflareModal.form.staging">
+                            </a-switch>
+                        </a-form-item>
+                    </a-form>
+                </a-modal>
             </a-spin>
         </a-layout-content>
     </a-layout>
@@ -255,6 +285,15 @@
                     staging: false,
                 },
             },
+            issueDNSCloudflareModal: {
+                visible: false,
+                confirmLoading: false,
+                form: {
+                    domain: '',
+                    email: '',
+                    staging: false,
+                },
+            },
         },
         methods: {
             loading(spinning = true) {
@@ -275,6 +314,9 @@
                 if (!this.issueHttpModal.form.domain) {
                     this.issueHttpModal.form.domain = this.status.webDomain || '';
                 }
+                if (!this.issueDNSCloudflareModal.form.domain) {
+                    this.issueDNSCloudflareModal.form.domain = this.status.webDomain || '';
+                }
             },
             redirectToScheme(protocol, message) {
                 if (window.location.protocol === protocol) {
@@ -291,6 +333,10 @@
                 this.issueHttpModal.form.domain = this.domainForm.domain || this.status.webDomain || '';
                 this.issueHttpModal.visible = true;
             },
+            openIssueDNSCloudflareModal() {
+                this.issueDNSCloudflareModal.form.domain = this.domainForm.domain || this.status.webDomain || '';
+                this.issueDNSCloudflareModal.visible = true;
+            },
             resetUploadModal() {
                 this.uploadModal.visible = false;
                 this.uploadModal.confirmLoading = false;
@@ -302,6 +348,10 @@
             resetIssueHTTPModal() {
                 this.issueHttpModal.visible = false;
                 this.issueHttpModal.confirmLoading = false;
+            },
+            resetIssueDNSCloudflareModal() {
+                this.issueDNSCloudflareModal.visible = false;
+                this.issueDNSCloudflareModal.confirmLoading = false;
             },
             async submitUpload() {
                 this.uploadModal.confirmLoading = true;
@@ -324,6 +374,19 @@
                 this.resetIssueHTTPModal();
                 if (msg.obj && msg.obj.status && msg.obj.status.httpsActive) {
                     this.redirectToScheme('https:', '证书已申请并启用 HTTPS，正在跳转到安全地址');
+                }
+            },
+            async submitIssueDNSCloudflare() {
+                this.issueDNSCloudflareModal.confirmLoading = true;
+                const msg = await HttpUtil.post('/xui/cert/issueDnsCloudflare', this.issueDNSCloudflareModal.form);
+                this.issueDNSCloudflareModal.confirmLoading = false;
+                if (!msg.success) {
+                    return;
+                }
+                this.applyStatus(msg.obj ? msg.obj.status : null);
+                this.resetIssueDNSCloudflareModal();
+                if (msg.obj && msg.obj.status && msg.obj.status.httpsActive) {
+                    this.redirectToScheme('https:', 'Cloudflare DNS-01 证书已申请并启用 HTTPS，正在跳转到安全地址');
                 }
             },
             async enableHTTPS() {

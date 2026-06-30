@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -15,9 +16,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 	"x-ui/database"
+	"x-ui/web/entity"
 )
 
 func initCertTestDB(t *testing.T) {
@@ -665,6 +668,220 @@ func TestCountPEMBlocks(t *testing.T) {
 	}
 }
 
+func TestIssueDNSCloudflareSuccessDeletesTXT(t *testing.T) {
+	initCertTestDB(t)
+
+	settingService := &SettingService{}
+	if err := settingService.SetCloudflareEnabled(true); err != nil {
+		t.Fatalf("set cloudflare enabled failed: %v", err)
+	}
+	if err := settingService.SetCloudflareAPIToken("token-123"); err != nil {
+		t.Fatalf("set cloudflare token failed: %v", err)
+	}
+
+	createCalls := 0
+	deleteCalls := 0
+	acmeHome := writeTestAcmeHome(t)
+	mockProvider := &mockCertCloudflareProvider{
+		status: &entity.CloudflareStatus{
+			CloudflareConfig: entity.CloudflareConfig{
+				APIToken: "token-123",
+				Enabled:  true,
+				AuthMode: "api_token",
+			},
+		},
+		zone: &entity.CloudflareZone{
+			ID:   "zone-1",
+			Name: "example.com",
+		},
+		createTXTRecordFn: func(zoneID string, name string, content string) (*entity.CloudflareDNSRecord, error) {
+			createCalls++
+			return &entity.CloudflareDNSRecord{ID: "record-1", Name: name, Content: content, Type: "TXT"}, nil
+		},
+		deleteTXTRecordFn: func(zoneID string, recordID string) error {
+			deleteCalls++
+			return nil
+		},
+	}
+
+	certFile := filepath.Join(t.TempDir(), "acme-panel.crt")
+	service := CertService{
+		panelCertDir:          filepath.Dir(certFile),
+		acmeSearchHomes:       []string{acmeHome},
+		txtPropagationTimeout: 100 * time.Millisecond,
+		txtPropagationRetry:   5 * time.Millisecond,
+		cloudflareProvider:    mockProvider,
+		lookupTXT:             func(ctx context.Context, name string) ([]string, error) { return []string{"propagated-value"}, nil },
+		issueACMEDNSCloudflareFn: func(domain string, staging bool, status *entity.CloudflareStatus, zone *entity.CloudflareZone) error {
+			return nil
+		},
+		installACMECertificateFn: func(domain string, certPath string, keyPath string) error {
+			certPEM, keyPEM, err := generateSelfSignedCert([]string{domain}, time.Now().Add(48*time.Hour))
+			if err != nil {
+				return err
+			}
+			fullchain := append(append([]byte{}, certPEM...), certPEM...)
+			if err := os.WriteFile(certPath, fullchain, 0644); err != nil {
+				return err
+			}
+			return os.WriteFile(keyPath, keyPEM, 0600)
+		},
+		applyHTTPSCertificateFn: func(certPath string, keyPath string, mode string, provider string, status string, autoRenew bool) (bool, error) {
+			if mode != "acme_dns_cf" {
+				t.Fatalf("expected mode acme_dns_cf, got %s", mode)
+			}
+			return true, nil
+		},
+	}
+	service.lookupTXT = func(ctx context.Context, name string) ([]string, error) {
+		return []string{"propagated-value"}, nil
+	}
+
+	// Override the challenge value deterministically via provider content echo expectation.
+	mockProvider.createTXTRecordFn = func(zoneID string, name string, content string) (*entity.CloudflareDNSRecord, error) {
+		createCalls++
+		service.lookupTXT = func(ctx context.Context, lookupName string) ([]string, error) {
+			if lookupName != name {
+				t.Fatalf("unexpected lookup name %s", lookupName)
+			}
+			return []string{content}, nil
+		}
+		return &entity.CloudflareDNSRecord{ID: "record-1", Name: name, Content: content, Type: "TXT"}, nil
+	}
+
+	result, err := service.IssueDNSCloudflare("panel.example.com", "admin@example.com", true)
+	if err != nil {
+		t.Fatalf("IssueDNSCloudflare failed: %v", err)
+	}
+	if !result.Applied {
+		t.Fatalf("expected applied=true")
+	}
+	if createCalls != 1 || deleteCalls != 1 {
+		t.Fatalf("expected create/delete once, got create=%d delete=%d", createCalls, deleteCalls)
+	}
+}
+
+func TestIssueDNSCloudflarePropagationTimeoutDeletesTXT(t *testing.T) {
+	initCertTestDB(t)
+
+	settingService := &SettingService{}
+	_ = settingService.SetCloudflareEnabled(true)
+	_ = settingService.SetCloudflareAPIToken("token-123")
+
+	deleteCalls := 0
+	acmeHome := writeTestAcmeHome(t)
+	service := CertService{
+		acmeSearchHomes:       []string{acmeHome},
+		txtPropagationTimeout: 20 * time.Millisecond,
+		txtPropagationRetry:   5 * time.Millisecond,
+		cloudflareProvider: &mockCertCloudflareProvider{
+			status: &entity.CloudflareStatus{
+				CloudflareConfig: entity.CloudflareConfig{APIToken: "token-123", Enabled: true, AuthMode: "api_token"},
+			},
+			zone: &entity.CloudflareZone{ID: "zone-1", Name: "example.com"},
+			createTXTRecordFn: func(zoneID string, name string, content string) (*entity.CloudflareDNSRecord, error) {
+				return &entity.CloudflareDNSRecord{ID: "record-1", Name: name, Content: content, Type: "TXT"}, nil
+			},
+			deleteTXTRecordFn: func(zoneID string, recordID string) error {
+				deleteCalls++
+				return nil
+			},
+		},
+		lookupTXT: func(ctx context.Context, name string) ([]string, error) {
+			return []string{"wrong-value"}, nil
+		},
+	}
+
+	err := service.waitForTXTPropagation("_acme-challenge.panel.example.com", "expected-value", 20*time.Millisecond, 5*time.Millisecond)
+	if err == nil {
+		t.Fatalf("expected propagation timeout")
+	}
+
+	_, err = service.IssueDNSCloudflare("panel.example.com", "admin@example.com", true)
+	if err == nil || !strings.Contains(err.Error(), "dns txt propagation timed out") {
+		t.Fatalf("expected propagation timeout from issue flow, got %v", err)
+	}
+	if deleteCalls != 1 {
+		t.Fatalf("expected TXT delete on timeout, got %d", deleteCalls)
+	}
+}
+
+func TestIssueDNSCloudflareIssueFailureStillDeletesTXT(t *testing.T) {
+	initCertTestDB(t)
+
+	settingService := &SettingService{}
+	_ = settingService.SetCloudflareEnabled(true)
+	_ = settingService.SetCloudflareAPIToken("token-123")
+
+	deleteCalls := 0
+	acmeHome := writeTestAcmeHome(t)
+	mockProvider := &mockCertCloudflareProvider{
+		status: &entity.CloudflareStatus{
+			CloudflareConfig: entity.CloudflareConfig{APIToken: "token-123", Enabled: true, AuthMode: "api_token"},
+		},
+		zone: &entity.CloudflareZone{ID: "zone-1", Name: "example.com"},
+		deleteTXTRecordFn: func(zoneID string, recordID string) error {
+			deleteCalls++
+			return nil
+		},
+	}
+	service := CertService{
+		acmeSearchHomes:       []string{acmeHome},
+		txtPropagationTimeout: 100 * time.Millisecond,
+		txtPropagationRetry:   5 * time.Millisecond,
+		cloudflareProvider:    mockProvider,
+		issueACMEDNSCloudflareFn: func(domain string, staging bool, status *entity.CloudflareStatus, zone *entity.CloudflareZone) error {
+			return errors.New("issue failed")
+		},
+	}
+	mockProvider.createTXTRecordFn = func(zoneID string, name string, content string) (*entity.CloudflareDNSRecord, error) {
+		service.lookupTXT = func(ctx context.Context, lookupName string) ([]string, error) {
+			return []string{content}, nil
+		}
+		return &entity.CloudflareDNSRecord{ID: "record-1", Name: name, Content: content, Type: "TXT"}, nil
+	}
+
+	_, err := service.IssueDNSCloudflare("panel.example.com", "admin@example.com", true)
+	if err == nil || !strings.Contains(err.Error(), "issue failed") {
+		t.Fatalf("expected issue failure, got %v", err)
+	}
+	if deleteCalls != 1 {
+		t.Fatalf("expected TXT delete on issue failure, got %d", deleteCalls)
+	}
+}
+
+type mockCertCloudflareProvider struct {
+	status            *entity.CloudflareStatus
+	zone              *entity.CloudflareZone
+	createTXTRecordFn func(string, string, string) (*entity.CloudflareDNSRecord, error)
+	deleteTXTRecordFn func(string, string) error
+}
+
+func (m *mockCertCloudflareProvider) GetStatus() (*entity.CloudflareStatus, error) {
+	return m.status, nil
+}
+
+func (m *mockCertCloudflareProvider) DetectZoneByDomain(domain string) (*entity.CloudflareZone, error) {
+	if m.zone == nil {
+		return nil, errors.New("zone not found")
+	}
+	return m.zone, nil
+}
+
+func (m *mockCertCloudflareProvider) CreateTXTRecord(zoneID string, name string, content string) (*entity.CloudflareDNSRecord, error) {
+	if m.createTXTRecordFn == nil {
+		return nil, errors.New("createTXTRecordFn not set")
+	}
+	return m.createTXTRecordFn(zoneID, name, content)
+}
+
+func (m *mockCertCloudflareProvider) DeleteTXTRecord(zoneID string, recordID string) error {
+	if m.deleteTXTRecordFn == nil {
+		return nil
+	}
+	return m.deleteTXTRecordFn(zoneID, recordID)
+}
+
 func generateSelfSignedCert(dnsNames []string, notAfter time.Time) ([]byte, []byte, error) {
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
@@ -711,4 +928,18 @@ func mustTestURLPort(t *testing.T, rawURL string) int {
 		t.Fatalf("parse test port failed: %v", err)
 	}
 	return port
+}
+
+func writeTestAcmeHome(t *testing.T) string {
+	t.Helper()
+
+	acmeHome := filepath.Join(t.TempDir(), "acme-home")
+	if err := os.MkdirAll(acmeHome, 0755); err != nil {
+		t.Fatalf("mkdir acme home failed: %v", err)
+	}
+	acmeBin := filepath.Join(acmeHome, "acme.sh")
+	if err := os.WriteFile(acmeBin, []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatalf("write acme bin failed: %v", err)
+	}
+	return acmeHome
 }

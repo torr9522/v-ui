@@ -43,6 +43,7 @@ func (a *CertController) initRouter(g *gin.RouterGroup) {
 	g.POST("/checkDomain", a.checkDomain)
 	g.POST("/upload", a.upload)
 	g.POST("/issueHttp", a.issueHTTP)
+	g.POST("/issueDnsCloudflare", a.issueDNSCloudflare)
 	g.POST("/enableHttps", a.enableHTTPS)
 	g.POST("/disableHttps", a.disableHTTPS)
 }
@@ -119,6 +120,20 @@ func (a *CertController) issueHTTP(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, entity.Msg{Success: true, Msg: "issue http certificate success", Obj: result})
+}
+
+func (a *CertController) issueDNSCloudflare(c *gin.Context) {
+	req := &certIssueHTTPRequest{}
+	if err := c.ShouldBind(req); err != nil {
+		jsonMsg(c, "issue dns cloudflare certificate", err)
+		return
+	}
+	result, err := a.certService.IssueDNSCloudflare(req.Domain, req.Email, req.Staging)
+	if err != nil {
+		c.JSON(http.StatusOK, entity.Msg{Success: false, Msg: err.Error(), Obj: nil})
+		return
+	}
+	c.JSON(http.StatusOK, entity.Msg{Success: true, Msg: "issue dns cloudflare certificate success", Obj: result})
 }
 
 func (a *CertController) enableHTTPS(c *gin.Context) {
