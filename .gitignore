@@ -1,0 +1,16 @@
+.env
+.git.n-ui-backup/
+*.log
+*.db
+*.db-shm
+*.db-wal
+nohup.out
+tmp/
+dist/
+build/
+*.zip
+*.tar.gz
+*.bak
+.DS_Store
+/x-ui
+/xray-linux-*

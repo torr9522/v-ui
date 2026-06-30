@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content {
+            margin: 24px 16px;
+        }
+    }
+
+    .ant-col-sm-24 {
+        margin-top: 10px;
+    }
+
+    .json-preview {
+        display: inline-block;
+        max-width: 240px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .json-content {
+        font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    .action-link + .action-link {
+        margin-left: 8px;
+    }
+
+    .outbound-form-hint {
+        color: rgba(0, 0, 0, 0.45);
+        font-size: 12px;
+        margin-top: 4px;
+    }
+</style>
+<body>
+<a-layout id="app" v-cloak>
+    {{ template "commonSider" . }}
+    <a-layout id="content-layout">
+        <a-layout-content>
+            <a-spin :spinning="spinning" :delay="300" tip="loading">
+                <transition name="list" appear>
+                    <a-card hoverable style="margin-bottom: 20px;">
+                        <a-row>
+                            <a-col :xs="24" :sm="24" :lg="8">
+                                出站数量
+                                <a-tag color="blue">[[ outbounds.length ]]</a-tag>
+                            </a-col>
+                            <a-col :xs="24" :sm="24" :lg="8">
+                                系统出站
+                                <a-tag color="purple">[[ systemCount ]]</a-tag>
+                            </a-col>
+                            <a-col :xs="24" :sm="24" :lg="8">
+                                已启用
+                                <a-tag color="green">[[ enabledCount ]]</a-tag>
+                            </a-col>
+                        </a-row>
+                    </a-card>
+                </transition>
+                <transition name="list" appear>
+                    <a-card hoverable>
+                        <div slot="title">
+                            <a-button type="primary" icon="plus" @click="openAddOutbound">新增</a-button>
+                            <a-button style="margin-left: 8px;" icon="reload" @click="getOutbounds">刷新</a-button>
+                        </div>
+                        <a-table :columns="columns"
+                                 :row-key="outbound => outbound.id"
+                                 :data-source="outbounds"
+                                 :loading="spinning"
+                                 :scroll="{ x: 2400 }"
+                                 :pagination="false"
+                                 style="margin-top: 20px">
+                            <template slot="action" slot-scope="text, outbound">
+                                <a @click="openEditOutbound(outbound)" class="action-link">编辑</a>
+                                <a v-if="canDeleteOutbound(outbound)"
+                                   @click="deleteOutbound(outbound)"
+                                   class="action-link"
+                                   style="color: #ff4d4f;">删除</a>
+                                <a-tag v-else class="action-link" color="default">受保护</a-tag>
+                            </template>
+                            <template slot="enabled" slot-scope="text, outbound">
+                                <a-switch :checked="outbound.enabled"
+                                          :disabled="isToggleDisabled(outbound)"
+                                          @change="checked => toggleOutbound(outbound, checked)"></a-switch>
+                            </template>
+                            <template slot="tag" slot-scope="text, outbound">
+                                <a-tag :color="outbound.isSystem ? 'purple' : 'blue'">[[ outbound.tag ]]</a-tag>
+                            </template>
+                            <template slot="protocol" slot-scope="text, outbound">
+                                <a-tag color="geekblue">[[ outbound.protocol ]]</a-tag>
+                            </template>
+                            <template slot="isSystem" slot-scope="text, outbound">
+                                <a-tag v-if="outbound.isSystem" color="purple">System</a-tag>
+                                <a-tag v-else color="cyan">User</a-tag>
+                            </template>
+                            <template slot="settings" slot-scope="text, outbound">
+                                <span class="json-preview" :title="normalizeJson(outbound.settings)">[[ normalizeJson(outbound.settings) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showJsonViewer('settings', outbound.settings)">查看</a-button>
+                            </template>
+                            <template slot="streamSettings" slot-scope="text, outbound">
+                                <span class="json-preview" :title="normalizeJson(outbound.streamSettings)">[[ normalizeJson(outbound.streamSettings) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showJsonViewer('streamSettings', outbound.streamSettings)">查看</a-button>
+                            </template>
+                            <template slot="mux" slot-scope="text, outbound">
+                                <span class="json-preview" :title="normalizeJson(outbound.mux)">[[ normalizeJson(outbound.mux) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showJsonViewer('mux', outbound.mux)">查看</a-button>
+                            </template>
+                            <template slot="createdAt" slot-scope="text, outbound">
+                                <a-tag color="blue">[[ formatMillis(outbound.createdAt) ]]</a-tag>
+                            </template>
+                            <template slot="updatedAt" slot-scope="text, outbound">
+                                <a-tag color="green">[[ formatMillis(outbound.updatedAt) ]]</a-tag>
+                            </template>
+                        </a-table>
+                    </a-card>
+                </transition>
+            </a-spin>
+        </a-layout-content>
+    </a-layout>
+
+    <a-modal v-model="editor.visible"
+             :title="editor.title"
+             :confirm-loading="editor.confirmLoading"
+             :mask-closable="false"
+             :ok-text="editor.okText"
+             cancel-text="取消"
+             width="920px"
+             @ok="submitOutbound">
+        <a-form layout="vertical">
+            <a-row :gutter="16">
+                <a-col :xs="24" :sm="12">
+                    <a-form-item label="Tag" required>
+                        <a-input v-model.trim="editor.form.tag" :disabled="isSystemEditing"></a-input>
+                        <div class="outbound-form-hint">只允许字母、数字、下划线、短横线、点。</div>
+                    </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="12">
+                    <a-form-item label="协议" required>
+                        <a-select v-model="editor.form.protocol" :disabled="isSystemEditing">
+                            <a-select-option v-for="protocol in protocolOptions" :key="protocol" :value="protocol">[[ protocol ]]</a-select-option>
+                        </a-select>
+                    </a-form-item>
+                </a-col>
+            </a-row>
+            <a-row :gutter="16">
+                <a-col :xs="24" :sm="8">
+                    <a-form-item label="启用">
+                        <a-switch v-model="editor.form.enabled" :disabled="isSystemEditing"></a-switch>
+                    </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="8">
+                    <a-form-item label="排序">
+                        <a-input-number v-model="editor.form.sort" style="width: 100%;" :min="0"></a-input-number>
+                    </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="8">
+                    <a-form-item label="系统项">
+                        <a-switch v-model="editor.form.isSystem" disabled></a-switch>
+                    </a-form-item>
+                </a-col>
+            </a-row>
+            <a-form-item label="备注">
+                <a-input v-model.trim="editor.form.remark" :max-length="255"></a-input>
+            </a-form-item>
+            <a-form-item label="Settings" required>
+                <a-textarea v-model="editor.form.settings" :disabled="isSystemEditing" :auto-size="{ minRows: 6, maxRows: 12 }"></a-textarea>
+                <div class="outbound-form-hint">
+                    JSON object
+                    <a-button type="link" size="small" @click="openJsonEditor('settings')">高级编辑</a-button>
+                </div>
+            </a-form-item>
+            <a-form-item label="StreamSettings">
+                <a-textarea v-model="editor.form.streamSettings" :disabled="isSystemEditing" :auto-size="{ minRows: 4, maxRows: 10 }"></a-textarea>
+                <div class="outbound-form-hint">
+                    留空或 JSON object
+                    <a-button type="link" size="small" @click="openJsonEditor('streamSettings')">高级编辑</a-button>
+                </div>
+            </a-form-item>
+            <a-form-item label="Mux">
+                <a-textarea v-model="editor.form.mux" :disabled="isSystemEditing" :auto-size="{ minRows: 4, maxRows: 10 }"></a-textarea>
+                <div class="outbound-form-hint">
+                    留空或 JSON object
+                    <a-button type="link" size="small" @click="openJsonEditor('mux')">高级编辑</a-button>
+                </div>
+            </a-form-item>
+        </a-form>
+    </a-modal>
+
+    <a-modal v-model="jsonModal.visible"
+             :title="jsonModal.title"
+             :confirm-loading="jsonModal.confirmLoading"
+             :mask-closable="false"
+             :ok-text="jsonModal.mode === 'edit' ? '应用' : '关闭'"
+             cancel-text="取消"
+             width="860px"
+             @ok="handleJsonModalOk"
+             @cancel="closeJsonModal">
+        <template v-if="jsonModal.mode === 'view'">
+            <pre class="json-content">[[ jsonModal.content || '-' ]]</pre>
+        </template>
+        <template v-else>
+            <a-textarea v-model="jsonModal.content"
+                        :auto-size="{ minRows: 14, maxRows: 24 }"></a-textarea>
+        </template>
+    </a-modal>
+</a-layout>
+{{template "js" .}}
+<script>
+
+    const protocolOptions = [
+        'freedom',
+        'blackhole',
+        'socks',
+        'vmess',
+        'vless',
+        'trojan',
+        'shadowsocks',
+    ];
+
+    const columns = [{
+        title: "操作",
+        align: 'center',
+        width: 120,
+        scopedSlots: { customRender: 'action' },
+    }, {
+        title: "启用",
+        align: 'center',
+        width: 80,
+        scopedSlots: { customRender: 'enabled' },
+    }, {
+        title: "ID",
+        align: 'center',
+        dataIndex: "id",
+        width: 70,
+    }, {
+        title: "排序",
+        align: 'center',
+        dataIndex: "sort",
+        width: 80,
+    }, {
+        title: "备注",
+        align: 'center',
+        dataIndex: "remark",
+        width: 150,
+    }, {
+        title: "Tag",
+        align: 'center',
+        width: 130,
+        scopedSlots: { customRender: 'tag' },
+    }, {
+        title: "协议",
+        align: 'center',
+        width: 110,
+        scopedSlots: { customRender: 'protocol' },
+    }, {
+        title: "系统项",
+        align: 'center',
+        width: 100,
+        scopedSlots: { customRender: 'isSystem' },
+    }, {
+        title: "Settings",
+        align: 'center',
+        width: 320,
+        scopedSlots: { customRender: 'settings' },
+    }, {
+        title: "StreamSettings",
+        align: 'center',
+        width: 320,
+        scopedSlots: { customRender: 'streamSettings' },
+    }, {
+        title: "Mux",
+        align: 'center',
+        width: 260,
+        scopedSlots: { customRender: 'mux' },
+    }, {
+        title: "创建时间",
+        align: 'center',
+        width: 180,
+        scopedSlots: { customRender: 'createdAt' },
+    }, {
+        title: "更新时间",
+        align: 'center',
+        width: 180,
+        scopedSlots: { customRender: 'updatedAt' },
+    }];
+
+    function createOutboundForm() {
+        return {
+            id: 0,
+            tag: '',
+            protocol: 'freedom',
+            settings: '{}',
+            streamSettings: '',
+            mux: '',
+            enabled: true,
+            remark: '',
+            sort: 1000,
+            isSystem: false,
+        };
+    }
+
+    const app = new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#app',
+        data: {
+            siderDrawer,
+            spinning: false,
+            outbounds: [],
+            columns: columns,
+            protocolOptions: protocolOptions,
+            editor: {
+                visible: false,
+                title: '',
+                okText: '保存',
+                confirmLoading: false,
+                mode: 'add',
+                form: createOutboundForm(),
+            },
+            jsonModal: {
+                visible: false,
+                title: '',
+                content: '',
+                field: '',
+                mode: 'view',
+                confirmLoading: false,
+            },
+        },
+        computed: {
+            systemCount() {
+                return this.outbounds.filter(item => item.isSystem).length;
+            },
+            enabledCount() {
+                return this.outbounds.filter(item => item.enabled).length;
+            },
+            isSystemEditing() {
+                return !!this.editor.form.isSystem;
+            },
+        },
+        methods: {
+            loading(spinning = true) {
+                this.spinning = spinning;
+            },
+            normalizeJson(value) {
+                if (ObjectUtil.isEmpty(value)) {
+                    return '';
+                }
+                return String(value);
+            },
+            normalizeJsonForEdit(value, emptyValue = '') {
+                if (ObjectUtil.isEmpty(value)) {
+                    return emptyValue;
+                }
+                const text = String(value);
+                try {
+                    return JSON.stringify(JSON.parse(text), null, 2);
+                } catch (e) {
+                    return text;
+                }
+            },
+            formatMillis(value) {
+                if (!value) {
+                    return '-';
+                }
+                return DateUtil.formatMillis(value);
+            },
+            showApplyResult(msg, fallbackApplied = false) {
+                const applied = !!(msg && msg.obj && msg.obj.applied);
+                if (applied || fallbackApplied) {
+                    this.$message.success('已保存并应用到 Xray');
+                    return;
+                }
+                this.$message.success('已保存，托管模式未开启，暂未应用到 Xray');
+            },
+            isToggleDisabled(outbound) {
+                return !!outbound.isSystem;
+            },
+            canDeleteOutbound(outbound) {
+                return !(outbound.isSystem || outbound.tag === 'direct' || outbound.tag === 'blocked');
+            },
+            buildPayload() {
+                return {
+                    tag: this.editor.form.tag,
+                    protocol: this.editor.form.protocol,
+                    settings: this.editor.form.settings,
+                    streamSettings: this.editor.form.streamSettings,
+                    mux: this.editor.form.mux,
+                    enabled: this.editor.form.enabled,
+                    remark: this.editor.form.remark,
+                    sort: this.editor.form.sort,
+                };
+            },
+            parseJsonObject(raw, fieldName, allowEmpty = false) {
+                const text = this.normalizeJson(raw).trim();
+                if (allowEmpty && text === '') {
+                    return '';
+                }
+                let parsed = null;
+                try {
+                    parsed = JSON.parse(text);
+                } catch (e) {
+                    throw new Error(`${fieldName} 必须是 JSON object`);
+                }
+                if (parsed === null || Array.isArray(parsed) || typeof parsed !== 'object') {
+                    throw new Error(`${fieldName} 必须是 JSON object`);
+                }
+                return JSON.stringify(parsed);
+            },
+            validateEditorForm() {
+                const form = this.editor.form;
+                if (ObjectUtil.isEmpty(form.tag)) {
+                    throw new Error('tag 必填');
+                }
+                if (!/^[A-Za-z0-9_.-]+$/.test(form.tag)) {
+                    throw new Error('tag 格式不正确');
+                }
+                if (ObjectUtil.isEmpty(form.protocol)) {
+                    throw new Error('protocol 必填');
+                }
+                if (this.protocolOptions.indexOf(form.protocol) < 0) {
+                    throw new Error('protocol 不支持');
+                }
+                if (String(form.remark || '').length > 255) {
+                    throw new Error('remark 长度不能超过 255');
+                }
+                if (form.sort === '' || form.sort === null || typeof form.sort === 'undefined') {
+                    form.sort = 1000;
+                }
+                if (Number.isNaN(Number(form.sort))) {
+                    throw new Error('sort 必须是数字');
+                }
+                form.sort = Number(form.sort);
+                form.settings = this.parseJsonObject(form.settings, 'settings', false);
+                form.streamSettings = this.parseJsonObject(form.streamSettings, 'streamSettings', true);
+                form.mux = this.parseJsonObject(form.mux, 'mux', true);
+            },
+            resetEditor() {
+                this.editor.form = createOutboundForm();
+                this.editor.confirmLoading = false;
+            },
+            openAddOutbound() {
+                this.resetEditor();
+                this.editor.mode = 'add';
+                this.editor.title = '新增出站';
+                this.editor.okText = '新增';
+                this.editor.visible = true;
+            },
+            openEditOutbound(outbound) {
+                this.editor.form = {
+                    id: outbound.id,
+                    tag: outbound.tag || '',
+                    protocol: outbound.protocol || 'freedom',
+                    settings: this.normalizeJsonForEdit(outbound.settings, '{}'),
+                    streamSettings: this.normalizeJsonForEdit(outbound.streamSettings, ''),
+                    mux: this.normalizeJsonForEdit(outbound.mux, ''),
+                    enabled: !!outbound.enabled,
+                    remark: outbound.remark || '',
+                    sort: typeof outbound.sort === 'number' ? outbound.sort : 1000,
+                    isSystem: !!outbound.isSystem,
+                };
+                this.editor.mode = 'edit';
+                this.editor.title = outbound.isSystem ? `编辑系统出站: ${outbound.tag}` : `编辑出站: ${outbound.tag}`;
+                this.editor.okText = '保存';
+                this.editor.confirmLoading = false;
+                this.editor.visible = true;
+            },
+            async submitOutbound() {
+                try {
+                    this.validateEditorForm();
+                } catch (e) {
+                    this.$message.error(e.message);
+                    return;
+                }
+
+                const isEdit = this.editor.mode === 'edit';
+                const url = isEdit ? `/xui/outbound/update/${this.editor.form.id}` : '/xui/outbound/add';
+                this.editor.confirmLoading = true;
+                const msg = await HttpUtil.post(url, this.buildPayload());
+                this.editor.confirmLoading = false;
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '保存失败');
+                    return;
+                }
+                this.editor.visible = false;
+                this.showApplyResult(msg);
+                await this.getOutbounds();
+            },
+            async deleteOutbound(outbound) {
+                if (!this.canDeleteOutbound(outbound)) {
+                    this.$message.warning('系统出站不能删除');
+                    return;
+                }
+                this.$confirm({
+                    title: `确定删除出站 ${outbound.tag} 吗？`,
+                    content: '删除后无法恢复。',
+                    okText: '删除',
+                    okType: 'danger',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        const msg = await HttpUtil.post(`/xui/outbound/del/${outbound.id}`);
+                        if (!msg.success) {
+                            this.$message.error(msg.msg || '删除失败');
+                            return;
+                        }
+                        this.showApplyResult(msg);
+                        await this.getOutbounds();
+                    }
+                });
+            },
+            async toggleOutbound(outbound, checked) {
+                if (this.isToggleDisabled(outbound)) {
+                    return;
+                }
+                const oldValue = outbound.enabled;
+                outbound.enabled = checked;
+                const msg = await HttpUtil.post(`/xui/outbound/toggle/${outbound.id}`, {
+                    enabled: checked,
+                });
+                if (!msg.success) {
+                    outbound.enabled = oldValue;
+                    this.$message.error(msg.msg || '切换失败');
+                    return;
+                }
+                this.showApplyResult(msg);
+                await this.getOutbounds();
+            },
+            showJsonViewer(name, value) {
+                this.jsonModal.mode = 'view';
+                this.jsonModal.title = `${name} 详情`;
+                this.jsonModal.content = this.normalizeJsonForEdit(value, '');
+                this.jsonModal.field = '';
+                this.jsonModal.visible = true;
+            },
+            openJsonEditor(field) {
+                this.jsonModal.mode = 'edit';
+                this.jsonModal.title = `${field} 高级编辑`;
+                this.jsonModal.content = this.normalizeJsonForEdit(this.editor.form[field], field === 'settings' ? '{}' : '');
+                this.jsonModal.field = field;
+                this.jsonModal.confirmLoading = false;
+                this.jsonModal.visible = true;
+            },
+            closeJsonModal() {
+                this.jsonModal.visible = false;
+                this.jsonModal.confirmLoading = false;
+            },
+            handleJsonModalOk() {
+                if (this.jsonModal.mode === 'view') {
+                    this.closeJsonModal();
+                    return;
+                }
+                try {
+                    const allowEmpty = this.jsonModal.field !== 'settings';
+                    const normalized = this.parseJsonObject(this.jsonModal.content, this.jsonModal.field, allowEmpty);
+                    this.editor.form[this.jsonModal.field] = normalized;
+                    this.closeJsonModal();
+                } catch (e) {
+                    this.$message.error(e.message);
+                }
+            },
+            async getOutbounds() {
+                this.loading();
+                const msg = await HttpUtil.post('/xui/outbound/list', {
+                    includeSystem: true,
+                });
+                this.loading(false);
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '获取出站列表失败');
+                    return;
+                }
+                this.outbounds = (msg.obj && msg.obj.items) ? msg.obj.items : [];
+            },
+        },
+        async mounted() {
+            await this.getOutbounds();
+        },
+    });
+
+</script>
+</body>
+</html>

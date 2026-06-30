@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="en">
+{{template "head" .}}
+<style>
+    @media (min-width: 769px) {
+        .ant-layout-content {
+            margin: 24px 16px;
+        }
+    }
+
+    .ant-col-sm-24 {
+        margin-top: 10px;
+    }
+
+    .field-preview {
+        display: inline-block;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+
+    .field-content {
+        font-family: SFMono-Regular, Consolas, Liberation Mono, Menlo, Courier, monospace;
+        white-space: pre-wrap;
+        word-break: break-all;
+    }
+
+    .action-link + .action-link {
+        margin-left: 8px;
+    }
+
+    .routing-form-hint {
+        color: rgba(0, 0, 0, 0.45);
+        font-size: 12px;
+        margin-top: 4px;
+    }
+</style>
+<body>
+<a-layout id="app" v-cloak>
+    {{ template "commonSider" . }}
+    <a-layout id="content-layout">
+        <a-layout-content>
+            <a-spin :spinning="spinning" :delay="300" tip="loading">
+                <transition name="list" appear>
+                    <a-card hoverable style="margin-bottom: 20px;">
+                        <a-row>
+                            <a-col :xs="24" :sm="24" :lg="8">
+                                规则数量
+                                <a-tag color="blue">[[ rules.length ]]</a-tag>
+                            </a-col>
+                            <a-col :xs="24" :sm="24" :lg="8">
+                                系统规则
+                                <a-tag color="purple">[[ systemCount ]]</a-tag>
+                            </a-col>
+                            <a-col :xs="24" :sm="24" :lg="8">
+                                已启用
+                                <a-tag color="green">[[ enabledCount ]]</a-tag>
+                            </a-col>
+                        </a-row>
+                    </a-card>
+                </transition>
+                <transition name="list" appear>
+                    <a-card hoverable>
+                        <div slot="title">
+                            <a-button type="primary" icon="plus" @click="openAddRule">新增</a-button>
+                            <a-button style="margin-left: 8px;" icon="deployment-unit" @click="openAITemplateModal">AI 分流模板</a-button>
+                            <a-button style="margin-left: 8px;" icon="reload" @click="refreshAll">刷新</a-button>
+                        </div>
+                        <a-table :columns="columns"
+                                 :row-key="rule => rule.id"
+                                 :data-source="rules"
+                                 :loading="spinning"
+                                 :scroll="{ x: 2700 }"
+                                 :pagination="false"
+                                 style="margin-top: 20px">
+                            <template slot="action" slot-scope="text, rule, index">
+                                <a @click="openEditRule(rule)" class="action-link">编辑</a>
+                                <a @click="moveRule(index, -1)" class="action-link">上移</a>
+                                <a @click="moveRule(index, 1)" class="action-link">下移</a>
+                                <a v-if="canDeleteRule(rule)"
+                                   @click="deleteRule(rule)"
+                                   class="action-link"
+                                   style="color: #ff4d4f;">删除</a>
+                                <a-tag v-else class="action-link" color="default">受保护</a-tag>
+                            </template>
+                            <template slot="enabled" slot-scope="text, rule">
+                                <a-switch :checked="rule.enabled"
+                                          :disabled="isToggleDisabled(rule)"
+                                          @change="checked => toggleRule(rule, checked)"></a-switch>
+                            </template>
+                            <template slot="sort" slot-scope="text, rule">
+                                <a-input-number :value="rule.sort"
+                                                :min="0"
+                                                size="small"
+                                                style="width: 90px;"
+                                                @change="value => changeRuleSort(rule, value)"></a-input-number>
+                            </template>
+                            <template slot="type" slot-scope="text, rule">
+                                <a-tag color="geekblue">[[ rule.type || 'field' ]]</a-tag>
+                            </template>
+                            <template slot="domain" slot-scope="text, rule">
+                                <span class="field-preview" :title="normalizeField(rule.domain)">[[ normalizeField(rule.domain) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showField('domain', rule.domain)">查看</a-button>
+                            </template>
+                            <template slot="ip" slot-scope="text, rule">
+                                <span class="field-preview" :title="normalizeField(rule.ip)">[[ normalizeField(rule.ip) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showField('ip', rule.ip)">查看</a-button>
+                            </template>
+                            <template slot="protocol" slot-scope="text, rule">
+                                <span class="field-preview" :title="normalizeField(rule.protocol)">[[ normalizeField(rule.protocol) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showField('protocol', rule.protocol)">查看</a-button>
+                            </template>
+                            <template slot="source" slot-scope="text, rule">
+                                <span class="field-preview" :title="normalizeField(rule.source)">[[ normalizeField(rule.source) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showField('source', rule.source)">查看</a-button>
+                            </template>
+                            <template slot="inboundTag" slot-scope="text, rule">
+                                <span class="field-preview" :title="normalizeField(rule.inboundTag)">[[ normalizeField(rule.inboundTag) || '-' ]]</span>
+                                <a-button type="link" size="small" @click="showField('inboundTag', rule.inboundTag)">查看</a-button>
+                            </template>
+                            <template slot="outboundTag" slot-scope="text, rule">
+                                <a-tag color="blue">[[ rule.outboundTag ]]</a-tag>
+                            </template>
+                            <template slot="isSystem" slot-scope="text, rule">
+                                <a-tag v-if="rule.isSystem" color="purple">System</a-tag>
+                                <a-tag v-else color="cyan">User</a-tag>
+                            </template>
+                            <template slot="createdAt" slot-scope="text, rule">
+                                <a-tag color="blue">[[ formatMillis(rule.createdAt) ]]</a-tag>
+                            </template>
+                            <template slot="updatedAt" slot-scope="text, rule">
+                                <a-tag color="green">[[ formatMillis(rule.updatedAt) ]]</a-tag>
+                            </template>
+                        </a-table>
+                    </a-card>
+                </transition>
+            </a-spin>
+        </a-layout-content>
+    </a-layout>
+
+    <a-modal v-model="editor.visible"
+             :title="editor.title"
+             :confirm-loading="editor.confirmLoading"
+             :mask-closable="false"
+             :ok-text="editor.okText"
+             cancel-text="取消"
+             width="960px"
+             @ok="submitRule">
+        <a-form layout="vertical">
+            <a-row :gutter="16">
+                <a-col :xs="24" :sm="8">
+                    <a-form-item label="Type" required>
+                        <a-select v-model="editor.form.type" :disabled="isSystemEditing">
+                            <a-select-option value="field">field</a-select-option>
+                        </a-select>
+                    </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="8">
+                    <a-form-item label="OutboundTag" required>
+                        <a-select v-model="editor.form.outboundTag" :disabled="isSystemEditing" show-search option-filter-prop="children">
+                            <a-select-option v-for="outbound in outboundOptions" :key="outbound.tag" :value="outbound.tag">[[ outbound.tag ]]</a-select-option>
+                        </a-select>
+                    </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="4">
+                    <a-form-item label="启用">
+                        <a-switch v-model="editor.form.enabled" :disabled="isSystemEditing"></a-switch>
+                    </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="4">
+                    <a-form-item label="排序">
+                        <a-input-number v-model="editor.form.sort" style="width: 100%;" :min="0"></a-input-number>
+                    </a-form-item>
+                </a-col>
+            </a-row>
+            <a-form-item label="备注">
+                <a-input v-model.trim="editor.form.remark" :max-length="255"></a-input>
+            </a-form-item>
+            <a-form-item label="Domain">
+                <a-textarea v-model="editor.form.domain" :disabled="isSystemEditing" :auto-size="{ minRows: 4, maxRows: 8 }"></a-textarea>
+                <div class="routing-form-hint">支持 JSON array 或每行一个值，例如 `domain:openai.com`。</div>
+            </a-form-item>
+            <a-form-item label="IP">
+                <a-textarea v-model="editor.form.ip" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                <div class="routing-form-hint">支持 JSON array 或每行一个值。</div>
+            </a-form-item>
+            <a-row :gutter="16">
+                <a-col :xs="24" :sm="12">
+                    <a-form-item label="Port">
+                        <a-input v-model.trim="editor.form.port" :disabled="isSystemEditing"></a-input>
+                    </a-form-item>
+                </a-col>
+                <a-col :xs="24" :sm="12">
+                    <a-form-item label="Network">
+                        <a-input v-model.trim="editor.form.network" :disabled="isSystemEditing"></a-input>
+                    </a-form-item>
+                </a-col>
+            </a-row>
+            <a-form-item label="Protocol">
+                <a-textarea v-model="editor.form.protocol" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                <div class="routing-form-hint">支持 JSON array 或每行一个值，例如 `http`、`tls`。</div>
+            </a-form-item>
+            <a-form-item label="Source">
+                <a-textarea v-model="editor.form.source" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                <div class="routing-form-hint">支持 JSON array 或每行一个值。</div>
+            </a-form-item>
+            <a-form-item label="InboundTag">
+                <a-textarea v-model="editor.form.inboundTag" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                <div class="routing-form-hint">支持 JSON array 或每行一个值。</div>
+            </a-form-item>
+        </a-form>
+    </a-modal>
+
+    <a-modal v-model="fieldModal.visible"
+             :title="fieldModal.title"
+             :footer="null"
+             width="860px">
+        <pre class="field-content">[[ fieldModal.content || '-' ]]</pre>
+    </a-modal>
+
+    <a-modal v-model="aiTemplate.visible"
+             title="AI 分流模板"
+             :confirm-loading="aiTemplate.confirmLoading"
+             :mask-closable="false"
+             ok-text="创建"
+             cancel-text="取消"
+             @ok="submitAITemplate">
+        <a-form layout="vertical">
+            <a-alert
+                type="info"
+                show-icon
+                message="将自动创建 OpenAI、Claude、Gemini、Grok、Perplexity、Poe、Cursor、GitHub Copilot、HuggingFace 分流规则。"
+                style="margin-bottom: 16px;">
+            </a-alert>
+            <a-form-item label="OutboundTag" required>
+                <a-select v-model="aiTemplate.form.outboundTag" show-search option-filter-prop="children">
+                    <a-select-option v-for="outbound in outboundOptions" :key="`ai-${outbound.tag}`" :value="outbound.tag">[[ outbound.tag ]]</a-select-option>
+                </a-select>
+            </a-form-item>
+            <a-form-item label="Sort Base">
+                <a-input-number v-model="aiTemplate.form.sortBase" style="width: 100%;" :min="0"></a-input-number>
+            </a-form-item>
+            <a-form-item label="Remark Prefix">
+                <a-input v-model.trim="aiTemplate.form.remarkPrefix"></a-input>
+            </a-form-item>
+        </a-form>
+    </a-modal>
+</a-layout>
+{{template "js" .}}
+<script>
+
+    const columns = [{
+        title: "操作",
+        align: 'center',
+        width: 160,
+        scopedSlots: { customRender: 'action' },
+    }, {
+        title: "启用",
+        align: 'center',
+        width: 80,
+        scopedSlots: { customRender: 'enabled' },
+    }, {
+        title: "ID",
+        align: 'center',
+        dataIndex: "id",
+        width: 70,
+    }, {
+        title: "排序",
+        align: 'center',
+        width: 100,
+        scopedSlots: { customRender: 'sort' },
+    }, {
+        title: "备注",
+        align: 'center',
+        dataIndex: "remark",
+        width: 150,
+    }, {
+        title: "类型",
+        align: 'center',
+        width: 100,
+        scopedSlots: { customRender: 'type' },
+    }, {
+        title: "Domain",
+        align: 'center',
+        width: 280,
+        scopedSlots: { customRender: 'domain' },
+    }, {
+        title: "IP",
+        align: 'center',
+        width: 260,
+        scopedSlots: { customRender: 'ip' },
+    }, {
+        title: "Port",
+        align: 'center',
+        dataIndex: "port",
+        width: 120,
+    }, {
+        title: "Protocol",
+        align: 'center',
+        width: 240,
+        scopedSlots: { customRender: 'protocol' },
+    }, {
+        title: "Network",
+        align: 'center',
+        dataIndex: "network",
+        width: 120,
+    }, {
+        title: "Source",
+        align: 'center',
+        width: 240,
+        scopedSlots: { customRender: 'source' },
+    }, {
+        title: "InboundTag",
+        align: 'center',
+        width: 240,
+        scopedSlots: { customRender: 'inboundTag' },
+    }, {
+        title: "OutboundTag",
+        align: 'center',
+        width: 140,
+        scopedSlots: { customRender: 'outboundTag' },
+    }, {
+        title: "系统项",
+        align: 'center',
+        width: 100,
+        scopedSlots: { customRender: 'isSystem' },
+    }, {
+        title: "创建时间",
+        align: 'center',
+        width: 180,
+        scopedSlots: { customRender: 'createdAt' },
+    }, {
+        title: "更新时间",
+        align: 'center',
+        width: 180,
+        scopedSlots: { customRender: 'updatedAt' },
+    }];
+
+    function createRuleForm() {
+        return {
+            id: 0,
+            type: 'field',
+            domain: '',
+            ip: '',
+            port: '',
+            protocol: '',
+            network: '',
+            source: '',
+            inboundTag: '',
+            outboundTag: '',
+            enabled: true,
+            remark: '',
+            sort: 1000,
+            isSystem: false,
+        };
+    }
+
+    const app = new Vue({
+        delimiters: ['[[', ']]'],
+        el: '#app',
+        data: {
+            siderDrawer,
+            spinning: false,
+            rules: [],
+            outboundOptions: [],
+            columns: columns,
+            editor: {
+                visible: false,
+                title: '',
+                okText: '保存',
+                confirmLoading: false,
+                mode: 'add',
+                form: createRuleForm(),
+            },
+            fieldModal: {
+                visible: false,
+                title: '',
+                content: '',
+            },
+            aiTemplate: {
+                visible: false,
+                confirmLoading: false,
+                form: {
+                    outboundTag: '',
+                    sortBase: 100,
+                    remarkPrefix: 'AI',
+                },
+            },
+        },
+        computed: {
+            systemCount() {
+                return this.rules.filter(item => item.isSystem).length;
+            },
+            enabledCount() {
+                return this.rules.filter(item => item.enabled).length;
+            },
+            isSystemEditing() {
+                return !!this.editor.form.isSystem;
+            },
+        },
+        methods: {
+            loading(spinning = true) {
+                this.spinning = spinning;
+            },
+            async refreshAll() {
+                await Promise.all([this.getRules(), this.getOutbounds()]);
+            },
+            async getRules() {
+                this.loading();
+                const msg = await HttpUtil.post('/xui/routing/list', {
+                    includeSystem: true,
+                });
+                this.loading(false);
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '获取路由规则失败');
+                    return;
+                }
+                this.rules = (msg.obj && msg.obj.items) ? msg.obj.items : [];
+            },
+            async getOutbounds() {
+                const msg = await HttpUtil.post('/xui/outbound/list', {
+                    includeSystem: true,
+                });
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '获取出站列表失败');
+                    return;
+                }
+                this.outboundOptions = (msg.obj && msg.obj.items) ? msg.obj.items : [];
+            },
+            openAITemplateModal() {
+                this.aiTemplate.form = {
+                    outboundTag: this.outboundOptions.length > 0 ? this.outboundOptions[0].tag : '',
+                    sortBase: 100,
+                    remarkPrefix: 'AI',
+                };
+                this.aiTemplate.confirmLoading = false;
+                this.aiTemplate.visible = true;
+            },
+            normalizeField(value) {
+                if (ObjectUtil.isEmpty(value)) {
+                    return '';
+                }
+                return String(value);
+            },
+            formatMillis(value) {
+                if (!value) {
+                    return '-';
+                }
+                return DateUtil.formatMillis(value);
+            },
+            showApplyResult(msg) {
+                const applied = !!(msg && msg.obj && msg.obj.applied);
+                if (applied) {
+                    this.$message.success('已保存并应用到 Xray');
+                    return;
+                }
+                this.$message.success('已保存，托管模式未开启，暂未应用到 Xray');
+            },
+            showAITemplateResult(msg) {
+                const applied = !!(msg && msg.obj && msg.obj.applied);
+                const created = msg && msg.obj ? msg.obj.created : 0;
+                const skipped = msg && msg.obj ? msg.obj.skipped : 0;
+                if (applied) {
+                    this.$message.success(`AI 分流模板已创建并应用到 Xray（创建 ${created}，跳过 ${skipped}）`);
+                    return;
+                }
+                this.$message.success(`AI 分流模板已创建，托管模式未开启，暂未应用到 Xray（创建 ${created}，跳过 ${skipped}）`);
+            },
+            showField(name, value) {
+                this.fieldModal.title = `${name} 详情`;
+                this.fieldModal.content = this.normalizeField(value);
+                this.fieldModal.visible = true;
+            },
+            canDeleteRule(rule) {
+                return !rule.isSystem;
+            },
+            isToggleDisabled(rule) {
+                return !!rule.isSystem;
+            },
+            normalizeArrayFieldForEdit(value) {
+                const text = this.normalizeField(value).trim();
+                if (text === '') {
+                    return '';
+                }
+                try {
+                    const parsed = JSON.parse(text);
+                    if (Array.isArray(parsed)) {
+                        return parsed.join('\n');
+                    }
+                } catch (e) {
+                }
+                return text;
+            },
+            toArrayJSONString(raw, fieldName) {
+                const text = this.normalizeField(raw).trim();
+                if (text === '') {
+                    return '';
+                }
+                try {
+                    const parsed = JSON.parse(text);
+                    if (!Array.isArray(parsed)) {
+                        throw new Error(`${fieldName} 必须是 JSON array 或每行一个值`);
+                    }
+                    return JSON.stringify(parsed.filter(item => String(item).trim() !== '').map(item => String(item).trim()));
+                } catch (e) {
+                    const items = text.split('\n').map(item => item.trim()).filter(item => item !== '');
+                    if (items.length === 0) {
+                        return '';
+                    }
+                    return JSON.stringify(items);
+                }
+            },
+            validateForm() {
+                const form = this.editor.form;
+                form.type = form.type || 'field';
+                if (form.type !== 'field') {
+                    throw new Error('type 只能是 field');
+                }
+                if (ObjectUtil.isEmpty(form.outboundTag)) {
+                    throw new Error('outboundTag 必选');
+                }
+                if (String(form.remark || '').length > 255) {
+                    throw new Error('remark 长度不能超过 255');
+                }
+                if (form.sort === '' || form.sort === null || typeof form.sort === 'undefined') {
+                    form.sort = 1000;
+                }
+                if (Number.isNaN(Number(form.sort))) {
+                    throw new Error('sort 必须是数字');
+                }
+                form.sort = Number(form.sort);
+                form.domain = this.toArrayJSONString(form.domain, 'domain');
+                form.ip = this.toArrayJSONString(form.ip, 'ip');
+                form.protocol = this.toArrayJSONString(form.protocol, 'protocol');
+                form.source = this.toArrayJSONString(form.source, 'source');
+                form.inboundTag = this.toArrayJSONString(form.inboundTag, 'inboundTag');
+                form.port = this.normalizeField(form.port).trim();
+                form.network = this.normalizeField(form.network).trim();
+                if (form.domain === '' &&
+                    form.ip === '' &&
+                    form.port === '' &&
+                    form.protocol === '' &&
+                    form.network === '' &&
+                    form.source === '' &&
+                    form.inboundTag === '') {
+                    throw new Error('至少填写一个匹配条件');
+                }
+            },
+            buildPayload() {
+                return {
+                    type: this.editor.form.type,
+                    domain: this.editor.form.domain,
+                    ip: this.editor.form.ip,
+                    port: this.editor.form.port,
+                    protocol: this.editor.form.protocol,
+                    network: this.editor.form.network,
+                    source: this.editor.form.source,
+                    inboundTag: this.editor.form.inboundTag,
+                    outboundTag: this.editor.form.outboundTag,
+                    enabled: this.editor.form.enabled,
+                    remark: this.editor.form.remark,
+                    sort: this.editor.form.sort,
+                };
+            },
+            openAddRule() {
+                this.editor.form = createRuleForm();
+                this.editor.mode = 'add';
+                this.editor.title = '新增路由规则';
+                this.editor.okText = '新增';
+                this.editor.confirmLoading = false;
+                this.editor.visible = true;
+            },
+            openEditRule(rule) {
+                this.editor.form = {
+                    id: rule.id,
+                    type: rule.type || 'field',
+                    domain: this.normalizeArrayFieldForEdit(rule.domain),
+                    ip: this.normalizeArrayFieldForEdit(rule.ip),
+                    port: rule.port || '',
+                    protocol: this.normalizeArrayFieldForEdit(rule.protocol),
+                    network: rule.network || '',
+                    source: this.normalizeArrayFieldForEdit(rule.source),
+                    inboundTag: this.normalizeArrayFieldForEdit(rule.inboundTag),
+                    outboundTag: rule.outboundTag || '',
+                    enabled: !!rule.enabled,
+                    remark: rule.remark || '',
+                    sort: typeof rule.sort === 'number' ? rule.sort : 1000,
+                    isSystem: !!rule.isSystem,
+                };
+                this.editor.mode = 'edit';
+                this.editor.title = rule.isSystem ? `编辑系统规则 #${rule.id}` : `编辑路由规则 #${rule.id}`;
+                this.editor.okText = '保存';
+                this.editor.confirmLoading = false;
+                this.editor.visible = true;
+            },
+            async submitRule() {
+                try {
+                    this.validateForm();
+                } catch (e) {
+                    this.$message.error(e.message);
+                    return;
+                }
+                const isEdit = this.editor.mode === 'edit';
+                const url = isEdit ? `/xui/routing/update/${this.editor.form.id}` : '/xui/routing/add';
+                this.editor.confirmLoading = true;
+                const msg = await HttpUtil.post(url, this.buildPayload());
+                this.editor.confirmLoading = false;
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '保存失败');
+                    return;
+                }
+                this.editor.visible = false;
+                this.showApplyResult(msg);
+                await this.getRules();
+            },
+            async deleteRule(rule) {
+                if (!this.canDeleteRule(rule)) {
+                    this.$message.warning('系统规则不能删除');
+                    return;
+                }
+                this.$confirm({
+                    title: `确定删除路由规则 #${rule.id} 吗？`,
+                    content: '删除后无法恢复。',
+                    okText: '删除',
+                    okType: 'danger',
+                    cancelText: '取消',
+                    onOk: async () => {
+                        const msg = await HttpUtil.post(`/xui/routing/del/${rule.id}`);
+                        if (!msg.success) {
+                            this.$message.error(msg.msg || '删除失败');
+                            return;
+                        }
+                        this.showApplyResult(msg);
+                        await this.getRules();
+                    }
+                });
+            },
+            async toggleRule(rule, checked) {
+                if (this.isToggleDisabled(rule)) {
+                    return;
+                }
+                const oldValue = rule.enabled;
+                rule.enabled = checked;
+                const msg = await HttpUtil.post(`/xui/routing/toggle/${rule.id}`, {
+                    enabled: checked,
+                });
+                if (!msg.success) {
+                    rule.enabled = oldValue;
+                    this.$message.error(msg.msg || '切换失败');
+                    return;
+                }
+                this.showApplyResult(msg);
+                await this.getRules();
+            },
+            async saveRuleSort(rule) {
+                const sort = Number(rule.sort);
+                if (Number.isNaN(sort)) {
+                    this.$message.error('sort 必须是数字');
+                    return;
+                }
+                const msg = await HttpUtil.post('/xui/routing/reorder', {
+                    items: [{
+                        id: rule.id,
+                        sort: sort,
+                    }],
+                });
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '排序保存失败');
+                    return;
+                }
+                this.showApplyResult(msg);
+                await this.getRules();
+            },
+            changeRuleSort(rule, value) {
+                rule.sort = typeof value === 'number' ? value : 1000;
+                this.saveRuleSort(rule);
+            },
+            async moveRule(index, step) {
+                const targetIndex = index + step;
+                if (targetIndex < 0 || targetIndex >= this.rules.length) {
+                    return;
+                }
+                const current = this.rules[index];
+                const target = this.rules[targetIndex];
+                const msg = await HttpUtil.post('/xui/routing/reorder', {
+                    items: [
+                        { id: current.id, sort: target.sort },
+                        { id: target.id, sort: current.sort },
+                    ],
+                });
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '排序保存失败');
+                    return;
+                }
+                this.showApplyResult(msg);
+                await this.getRules();
+            },
+            async submitAITemplate() {
+                if (ObjectUtil.isEmpty(this.aiTemplate.form.outboundTag)) {
+                    this.$message.error('请选择 outboundTag');
+                    return;
+                }
+                if (Number.isNaN(Number(this.aiTemplate.form.sortBase))) {
+                    this.$message.error('sortBase 必须是数字');
+                    return;
+                }
+                this.aiTemplate.confirmLoading = true;
+                const msg = await HttpUtil.post('/xui/routing/applyAiTemplate', {
+                    outboundTag: this.aiTemplate.form.outboundTag,
+                    sortBase: Number(this.aiTemplate.form.sortBase || 100),
+                    remarkPrefix: this.aiTemplate.form.remarkPrefix || 'AI',
+                });
+                this.aiTemplate.confirmLoading = false;
+                if (!msg.success) {
+                    this.$message.error(msg.msg || '创建 AI 分流模板失败');
+                    return;
+                }
+                this.aiTemplate.visible = false;
+                this.showAITemplateResult(msg);
+                await this.getRules();
+            },
+        },
+        async mounted() {
+            await this.refreshAll();
+        },
+    });
+
+</script>
+</body>
+</html>
