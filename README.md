@@ -3,6 +3,12 @@
 
 `v-ui` 是当前开发代号；实际运行层、服务名、命令名、安装路径和面板显示名继续保持 `x-ui`。当前代码基线包含出站管理、路由管理、AI 分流模板，以及基于 `managedOutboundsRouting` 的托管 Xray 配置能力。
 
+## Current Stable
+
+- `v1.0`
+- Status: `Ready For Production`
+- Status: `Ready For Node TLS`
+
 ## 核心功能
 
 - 出站管理：只读列表、CRUD、系统项保护、被路由引用时禁止删除
