@@ -82,6 +82,29 @@ func TestReadCertificateInfoParsesMetadata(t *testing.T) {
 	}
 }
 
+func TestReadCertificateInfoUsesFirstPEMBlock(t *testing.T) {
+	leafCertPEM, keyPEM, err := generateSelfSignedCert([]string{"leaf.example.com"}, time.Now().Add(72*time.Hour))
+	if err != nil {
+		t.Fatalf("generate leaf cert failed: %v", err)
+	}
+	chainCertPEM, _, err := generateSelfSignedCert([]string{"chain.example.com"}, time.Now().Add(96*time.Hour))
+	if err != nil {
+		t.Fatalf("generate chain cert failed: %v", err)
+	}
+
+	fullchainPEM := append(append([]byte{}, leafCertPEM...), chainCertPEM...)
+	info, err := readCertificateInfo(fullchainPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("read certificate info failed: %v", err)
+	}
+	if info.subject != "leaf.example.com" {
+		t.Fatalf("expected first PEM block subject leaf.example.com, got %s", info.subject)
+	}
+	if !containsString(info.dnsNames, "leaf.example.com") {
+		t.Fatalf("expected first PEM block dns name")
+	}
+}
+
 func TestUploadCertificateWritesFilesAndPermissions(t *testing.T) {
 	initCertTestDB(t)
 
@@ -515,25 +538,95 @@ func TestInstallAcmeCertificateUsesDiscoveredHomeAndBin(t *testing.T) {
 
 	var gotName string
 	var gotArgs []string
+	certFile := filepath.Join(t.TempDir(), "acme-panel.crt")
+	keyFile := filepath.Join(t.TempDir(), "acme-panel.key")
+	fullchainLeafPEM, _, err := generateSelfSignedCert([]string{"example.com"}, time.Now().Add(48*time.Hour))
+	if err != nil {
+		t.Fatalf("generate fullchain leaf failed: %v", err)
+	}
+	fullchainChainPEM, _, err := generateSelfSignedCert([]string{"issuer.example.com"}, time.Now().Add(96*time.Hour))
+	if err != nil {
+		t.Fatalf("generate fullchain chain failed: %v", err)
+	}
 	service := CertService{
 		acmeSearchHomes: []string{acmeHome},
 		runCommand: func(name string, args ...string) ([]byte, error) {
 			gotName = name
 			gotArgs = append([]string{}, args...)
+			if err := os.WriteFile(certFile, append(append([]byte{}, fullchainLeafPEM...), fullchainChainPEM...), 0644); err != nil {
+				t.Fatalf("write fullchain cert failed: %v", err)
+			}
+			if err := os.WriteFile(keyFile, []byte("key"), 0600); err != nil {
+				t.Fatalf("write key file failed: %v", err)
+			}
 			return []byte("ok"), nil
 		},
 	}
-	if err := service.installAcmeCertificate("example.com", "/tmp/panel.crt", "/tmp/panel.key"); err != nil {
+	if err := service.installAcmeCertificate("example.com", certFile, keyFile); err != nil {
 		t.Fatalf("installAcmeCertificate failed: %v", err)
 	}
 	if gotName != acmeBin {
 		t.Fatalf("expected command %s, got %s", acmeBin, gotName)
 	}
-	expectedPrefix := []string{"--home", acmeHome, "--install-cert", "-d", "example.com"}
+	expectedPrefix := []string{"--home", acmeHome, "--install-cert", "-d", "example.com", "--fullchain-file", certFile, "--key-file", keyFile}
 	for i, want := range expectedPrefix {
 		if i >= len(gotArgs) || gotArgs[i] != want {
 			t.Fatalf("expected arg[%d]=%s, got %v", i, want, gotArgs)
 		}
+	}
+}
+
+func TestInstallAcmeCertificateRejectsLeafOnlyPEM(t *testing.T) {
+	acmeHome := filepath.Join(t.TempDir(), "acme-home")
+	if err := os.MkdirAll(acmeHome, 0755); err != nil {
+		t.Fatalf("mkdir acme home failed: %v", err)
+	}
+	acmeBin := filepath.Join(acmeHome, "acme.sh")
+	if err := os.WriteFile(acmeBin, []byte("#!/bin/sh\n"), 0755); err != nil {
+		t.Fatalf("write acme bin failed: %v", err)
+	}
+
+	certFile := filepath.Join(t.TempDir(), "acme-panel.crt")
+	keyFile := filepath.Join(t.TempDir(), "acme-panel.key")
+	leafCertPEM, _, err := generateSelfSignedCert([]string{"example.com"}, time.Now().Add(48*time.Hour))
+	if err != nil {
+		t.Fatalf("generate leaf cert failed: %v", err)
+	}
+	service := CertService{
+		acmeSearchHomes: []string{acmeHome},
+		runCommand: func(name string, args ...string) ([]byte, error) {
+			if err := os.WriteFile(certFile, leafCertPEM, 0644); err != nil {
+				t.Fatalf("write leaf cert failed: %v", err)
+			}
+			if err := os.WriteFile(keyFile, []byte("key"), 0600); err != nil {
+				t.Fatalf("write key file failed: %v", err)
+			}
+			return []byte("ok"), nil
+		},
+	}
+	err = service.installAcmeCertificate("example.com", certFile, keyFile)
+	if err == nil {
+		t.Fatalf("expected leaf-only cert to fail fullchain validation")
+	}
+	if err.Error() != errAcmeFullchainMissing {
+		t.Fatalf("expected %s, got %v", errAcmeFullchainMissing, err)
+	}
+}
+
+func TestCountPEMBlocks(t *testing.T) {
+	leafCertPEM, _, err := generateSelfSignedCert([]string{"example.com"}, time.Now().Add(48*time.Hour))
+	if err != nil {
+		t.Fatalf("generate leaf cert failed: %v", err)
+	}
+	chainCertPEM, _, err := generateSelfSignedCert([]string{"issuer.example.com"}, time.Now().Add(96*time.Hour))
+	if err != nil {
+		t.Fatalf("generate chain cert failed: %v", err)
+	}
+	if got := countPEMBlocks(leafCertPEM); got != 1 {
+		t.Fatalf("expected 1 PEM block, got %d", got)
+	}
+	if got := countPEMBlocks(append(append([]byte{}, leafCertPEM...), chainCertPEM...)); got < 2 {
+		t.Fatalf("expected fullchain PEM block count >= 2, got %d", got)
 	}
 }
 

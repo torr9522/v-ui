@@ -30,6 +30,7 @@ const (
 	defaultListenerWaitTimeout = 15 * time.Second
 	defaultListenerRetryDelay  = 500 * time.Millisecond
 	defaultProbeTimeout        = 2 * time.Second
+	errAcmeFullchainMissing    = "ACME_FULLCHAIN_MISSING"
 )
 
 type CertService struct {
@@ -136,6 +137,10 @@ func (s *CertService) GetStatus() (*entity.CertStatus, error) {
 	}
 	if !status.CertExists {
 		return status, nil
+	}
+
+	if pemBlockCount, err := countPEMBlocksFromFile(displayCertFile); err == nil && pemBlockCount > 0 {
+		status.Warnings = append(status.Warnings, fmt.Sprintf("certificate PEM block count: %d", pemBlockCount))
 	}
 
 	info, err := readCertificateInfoFromFiles(displayCertFile, displayKeyFile)
@@ -838,8 +843,11 @@ func (s *CertService) installAcmeCertificate(domain string, certFile string, key
 	if err != nil {
 		return err
 	}
-	if _, err := s.command(acmePath, "--home", acmeHome, "--install-cert", "-d", domain, "--cert-file", certFile, "--key-file", keyFile); err != nil {
+	if _, err := s.command(acmePath, "--home", acmeHome, "--install-cert", "-d", domain, "--fullchain-file", certFile, "--key-file", keyFile); err != nil {
 		return fmt.Errorf("install acme certificate failed: %w", err)
+	}
+	if err := ensureACMEFullchain(certFile); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1068,6 +1076,39 @@ func parseCertificatePEM(certPEM []byte) (*certInfo, error) {
 		daysLeft:  daysLeft,
 		isExpired: isExpired,
 	}, nil
+}
+
+func countPEMBlocksFromFile(certFile string) (int, error) {
+	certPEM, err := os.ReadFile(certFile)
+	if err != nil {
+		return 0, errors.New("failed to read certificate file")
+	}
+	return countPEMBlocks(certPEM), nil
+}
+
+func countPEMBlocks(certPEM []byte) int {
+	count := 0
+	rest := certPEM
+	for len(rest) > 0 {
+		block, next := pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		count++
+		rest = next
+	}
+	return count
+}
+
+func ensureACMEFullchain(certFile string) error {
+	blockCount, err := countPEMBlocksFromFile(certFile)
+	if err != nil {
+		return err
+	}
+	if blockCount < 2 {
+		return errors.New(errAcmeFullchainMissing)
+	}
+	return nil
 }
 
 func getPublicServerIPs() []string {
