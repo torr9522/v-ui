@@ -10,7 +10,7 @@
 - Routing: list page, CRUD API, reorder support, enable/disable support
 - AI traffic split template for OpenAI, Claude, Gemini, Grok, Perplexity, Poe, Cursor, GitHub Copilot, and HuggingFace
 - Managed config mode: `x-ui` can generate `outbounds` and `routing.rules` directly
-- Source-install bootstrap: when no prebuilt `x-ui` binary exists, `install.sh` automatically installs Go, gcc, git, tar, curl, unzip, and `file`, then builds with `CGO_ENABLED=1`
+- Source-install bootstrap: when no prebuilt `x-ui` binary exists, `install.sh` automatically installs Go, gcc, git, tar, curl, unzip, and `file`, then builds with `CGO_ENABLED=1`; however, the raw `curl` entry command itself requires `curl` to already exist on the host
 
 ## Runtime Freeze
 
@@ -30,22 +30,29 @@ Additional note:
 
 ## Installation
 
-Default install command:
+On a fresh Debian / Ubuntu host, install `curl` first:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/torr9522/c-ui/c-ui/install.sh)
+apt update && apt install -y curl
+```
+
+Formal install command:
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install.sh)
 ```
 
 English installer:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/torr9522/c-ui/c-ui/install_en.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install_en.sh)
 ```
 
 Notes:
 
 - If you clone this repository and run `install.sh`, it will prefer the local source tree and the bundled `bin/` assets
-- If you use the raw install command, `install.sh` downloads the source archive from `torr9522/c-ui` and bootstraps the build on the target host
+- If you use the raw install command, `install.sh` downloads the source archive from `torr9522/v-ui` and bootstraps the build on the target host
+- The raw `curl` install entry is not a zero-dependency bootstrap and requires `curl` to be preinstalled
 - The installation flow no longer depends on raw links from the legacy `n-ui` repository
 
 ## Bundled Assets

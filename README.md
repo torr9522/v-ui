@@ -9,7 +9,7 @@
 - 路由管理：只读列表、CRUD、排序、启停控制
 - AI 分流模板：一键生成 OpenAI、Claude、Gemini、Grok、Perplexity、Poe、Cursor、GitHub Copilot、HuggingFace 规则
 - 托管配置：`managedOutboundsRouting` 开关控制是否由 `x-ui` 接管 `outbounds` 和 `routing.rules`
-- 安装自举：源码安装模式下，如果仓库中没有预编译 `x-ui`，`install.sh` 会自动安装 Go、gcc、git、tar、curl、unzip、file，并使用 `CGO_ENABLED=1` 构建
+- 安装自举：源码安装模式下，如果仓库中没有预编译 `x-ui`，`install.sh` 会自动安装 Go、gcc、git、tar、curl、unzip、file，并使用 `CGO_ENABLED=1` 构建；但 raw `curl` 安装入口本身要求宿主机先具备 `curl`
 
 ## Runtime Freeze
 
@@ -29,22 +29,29 @@
 
 ## 安装
 
-默认安装命令：
+纯净 Debian / Ubuntu 机器请先安装 `curl`：
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/torr9522/c-ui/c-ui/install.sh)
+apt update && apt install -y curl
+```
+
+正式安装命令：
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install.sh)
 ```
 
 English installer:
 
 ```bash
-bash <(curl -Ls https://raw.githubusercontent.com/torr9522/c-ui/c-ui/install_en.sh)
+bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install_en.sh)
 ```
 
 说明：
 
 - 如果你是直接 `git clone` 本仓库再执行 `install.sh`，脚本会优先使用本地源码和仓库内自带的 `bin/` 资源
-- 如果你是通过上面的 raw 命令直接安装，脚本会从 `torr9522/c-ui` 拉取同仓库源码归档并在目标机器上自举构建
+- 如果你是通过上面的 raw 命令直接安装，脚本会从 `torr9522/v-ui` 拉取同仓库源码归档并在目标机器上自举构建
+- raw `curl` 安装入口不是“零依赖一键启动”，它要求宿主机预先安装 `curl`
 - 不再依赖旧 `n-ui` 仓库的 raw 链接
 
 ## 仓库内置资产

@@ -35,6 +35,11 @@ Final result:
 - Production issuance: `PASS`
 - Renew flow validation: `PASS`
 
+Installer entry note:
+
+- the raw `bash <(curl -Ls ...)` installer entry requires `curl` to be preinstalled on the host
+- this is a published installation prerequisite, not something `install.sh` can bootstrap before download
+
 ## 3. Final Architecture
 
 ```text
