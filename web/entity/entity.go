@@ -41,13 +41,6 @@ type AllSetting struct {
 	WebCertMode      string `json:"webCertMode" form:"webCertMode"`
 	WebCertProvider  string `json:"webCertProvider" form:"webCertProvider"`
 
-	CloudflareApiToken  string `json:"cloudflareApiToken" form:"cloudflareApiToken"`
-	CloudflareZoneID    string `json:"cloudflareZoneID" form:"cloudflareZoneID"`
-	CloudflareAccountID string `json:"cloudflareAccountID" form:"cloudflareAccountID"`
-	CloudflareEmail     string `json:"cloudflareEmail" form:"cloudflareEmail"`
-	CloudflareApiKey    string `json:"cloudflareApiKey" form:"cloudflareApiKey"`
-	CloudflareEnabled   bool   `json:"cloudflareEnabled" form:"cloudflareEnabled"`
-
 	XrayTemplateConfig      string `json:"xrayTemplateConfig" form:"xrayTemplateConfig"`
 	ManagedOutboundsRouting bool   `json:"managedOutboundsRouting" form:"managedOutboundsRouting"`
 

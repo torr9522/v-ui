@@ -219,13 +219,6 @@ class AllSetting {
         this.webCertMode = "none";
         this.webCertProvider = "";
 
-        this.cloudflareApiToken = "";
-        this.cloudflareZoneID = "";
-        this.cloudflareAccountID = "";
-        this.cloudflareEmail = "";
-        this.cloudflareApiKey = "";
-        this.cloudflareEnabled = false;
-
         this.xrayTemplateConfig = "";
         this.managedOutboundsRouting = false;
 

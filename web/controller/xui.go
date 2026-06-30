@@ -7,13 +7,12 @@ import (
 type XUIController struct {
 	BaseController
 
-	inboundController    *InboundController
-	outboundController   *OutboundController
-	routingController    *RoutingController
-	settingController    *SettingController
-	certController       *CertController
-	cloudflareController *CloudflareController
-	accessIPController   *AccessIPController
+	inboundController  *InboundController
+	outboundController *OutboundController
+	routingController  *RoutingController
+	settingController  *SettingController
+	certController     *CertController
+	accessIPController *AccessIPController
 }
 
 func NewXUIController(g *gin.RouterGroup) *XUIController {
@@ -31,7 +30,6 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	g.GET("/outbounds", a.outbounds)
 	g.GET("/routing", a.routing)
 	g.GET("/cert", a.cert)
-	g.GET("/cloudflare", a.cloudflare)
 	g.GET("/access-ips", a.accessIPs)
 	g.GET("/setting", a.setting)
 
@@ -40,7 +38,6 @@ func (a *XUIController) initRouter(g *gin.RouterGroup) {
 	a.routingController = NewRoutingController(g)
 	a.settingController = NewSettingController(g)
 	a.certController = NewCertController(g)
-	a.cloudflareController = NewCloudflareController(g)
 	a.accessIPController = NewAccessIPController(g)
 }
 
@@ -62,10 +59,6 @@ func (a *XUIController) routing(c *gin.Context) {
 
 func (a *XUIController) cert(c *gin.Context) {
 	html(c, "cert.html", "x-ui - 域名证书", nil)
-}
-
-func (a *XUIController) cloudflare(c *gin.Context) {
-	html(c, "cloudflare.html", "x-ui - Cloudflare", nil)
 }
 
 func (a *XUIController) accessIPs(c *gin.Context) {

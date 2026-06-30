@@ -34,12 +34,6 @@ var defaultValueMap = map[string]string{
 	"webCertAutoRenew":        "false",
 	"webCertMode":             "none",
 	"webCertProvider":         "",
-	"cloudflareApiToken":      "",
-	"cloudflareZoneID":        "",
-	"cloudflareAccountID":     "",
-	"cloudflareEmail":         "",
-	"cloudflareApiKey":        "",
-	"cloudflareEnabled":       "false",
 	"secret":                  random.Seq(32),
 	"webBasePath":             "/",
 	"timeLocation":            "Asia/Shanghai",
@@ -304,54 +298,6 @@ func (s *SettingService) GetWebCertProvider() (string, error) {
 
 func (s *SettingService) SetWebCertProvider(provider string) error {
 	return s.setString("webCertProvider", provider)
-}
-
-func (s *SettingService) GetCloudflareAPIToken() (string, error) {
-	return s.getString("cloudflareApiToken")
-}
-
-func (s *SettingService) SetCloudflareAPIToken(value string) error {
-	return s.setString("cloudflareApiToken", strings.TrimSpace(value))
-}
-
-func (s *SettingService) GetCloudflareZoneID() (string, error) {
-	return s.getString("cloudflareZoneID")
-}
-
-func (s *SettingService) SetCloudflareZoneID(value string) error {
-	return s.setString("cloudflareZoneID", strings.TrimSpace(value))
-}
-
-func (s *SettingService) GetCloudflareAccountID() (string, error) {
-	return s.getString("cloudflareAccountID")
-}
-
-func (s *SettingService) SetCloudflareAccountID(value string) error {
-	return s.setString("cloudflareAccountID", strings.TrimSpace(value))
-}
-
-func (s *SettingService) GetCloudflareEmail() (string, error) {
-	return s.getString("cloudflareEmail")
-}
-
-func (s *SettingService) SetCloudflareEmail(value string) error {
-	return s.setString("cloudflareEmail", strings.TrimSpace(value))
-}
-
-func (s *SettingService) GetCloudflareAPIKey() (string, error) {
-	return s.getString("cloudflareApiKey")
-}
-
-func (s *SettingService) SetCloudflareAPIKey(value string) error {
-	return s.setString("cloudflareApiKey", strings.TrimSpace(value))
-}
-
-func (s *SettingService) GetCloudflareEnabled() (bool, error) {
-	return s.getBool("cloudflareEnabled")
-}
-
-func (s *SettingService) SetCloudflareEnabled(value bool) error {
-	return s.setString("cloudflareEnabled", strconv.FormatBool(value))
 }
 
 func (s *SettingService) GetSecret() ([]byte, error) {
