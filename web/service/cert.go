@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -22,6 +23,8 @@ const (
 	defaultPanelCertDir        = "/usr/local/x-ui/cert"
 	defaultPanelCertFile       = defaultPanelCertDir + "/panel.crt"
 	defaultPanelKeyFile        = defaultPanelCertDir + "/panel.key"
+	defaultAcmePanelCertFile   = defaultPanelCertDir + "/acme-panel.crt"
+	defaultAcmePanelKeyFile    = defaultPanelCertDir + "/acme-panel.key"
 	defaultRestartDelay        = 3 * time.Second
 	defaultListenerWaitTimeout = 15 * time.Second
 	defaultListenerRetryDelay  = 500 * time.Millisecond
@@ -35,6 +38,7 @@ type CertService struct {
 	panelPort        func() (int, error)
 	waitHTTPSReadyFn func(int, time.Duration) error
 	waitHTTPReadyFn  func(int, time.Duration) error
+	runCommand       func(name string, args ...string) ([]byte, error)
 }
 
 type certInfo struct {
@@ -49,6 +53,7 @@ type certInfo struct {
 }
 
 type certSettingsSnapshot struct {
+	domain    string
 	certFile  string
 	keyFile   string
 	status    string
@@ -279,62 +284,25 @@ func (s *CertService) UploadCertificate(certPEM string, keyPEM string) error {
 
 func (s *CertService) EnableHTTPS() (bool, error) {
 	settingService := &SettingService{}
-	snapshot, err := s.captureSettings(settingService)
-	if err != nil {
-		return false, err
-	}
-	port, err := s.getPanelPort(settingService)
-	if err != nil {
-		return false, err
-	}
-
 	certFile, keyFile, err := s.resolveEnablePaths(settingService)
 	if err != nil {
 		return false, err
 	}
-	info, err := readCertificateInfoFromFiles(certFile, keyFile)
+	mode, err := settingService.GetWebCertMode()
 	if err != nil {
 		return false, err
 	}
-
-	if err := settingService.SetCertFile(certFile); err != nil {
+	provider, err := settingService.GetWebCertProvider()
+	if err != nil {
 		return false, err
 	}
-	if err := settingService.SetKeyFile(keyFile); err != nil {
-		return false, err
+	if mode == "" || mode == "none" {
+		mode = "manual"
 	}
-	if err := settingService.SetWebCertStatus("enabled"); err != nil {
-		return false, err
+	if provider == "" {
+		provider = "manual"
 	}
-	if err := settingService.SetWebCertMode("manual"); err != nil {
-		return false, err
-	}
-	if err := settingService.SetWebCertProvider("manual"); err != nil {
-		return false, err
-	}
-	if err := settingService.SetWebCertIssuer(info.issuer); err != nil {
-		return false, err
-	}
-	if err := settingService.SetWebCertExpireAt(info.expireAt); err != nil {
-		return false, err
-	}
-
-	if err := s.restart(defaultRestartDelay); err != nil {
-		restoreErr := s.restoreSettings(settingService, snapshot)
-		restartRestoreErr := s.restart(defaultRestartDelay)
-		return false, common.Combine(err, restoreErr, restartRestoreErr)
-	}
-	if err := s.waitForHTTPSReady(port, defaultListenerWaitTimeout); err != nil {
-		return false, s.rollbackListenerState(
-			settingService,
-			snapshot,
-			port,
-			errors.New("HTTPS listener not ready after restart"),
-			err,
-		)
-	}
-
-	return true, nil
+	return s.applyHTTPSCertificate(certFile, keyFile, mode, provider, "enabled", false)
 }
 
 func (s *CertService) DisableHTTPS() (bool, error) {
@@ -356,7 +324,18 @@ func (s *CertService) DisableHTTPS() (bool, error) {
 	}
 
 	managedCertFile, managedKeyFile := s.managedPanelPaths()
-	if fileExists(managedCertFile) && fileExists(managedKeyFile) {
+	acmeCertFile, acmeKeyFile := s.acmePanelPaths()
+	if snapshot.mode == "acme_http" && fileExists(acmeCertFile) && fileExists(acmeKeyFile) {
+		if err := settingService.SetWebCertStatus("issued"); err != nil {
+			return false, err
+		}
+		if err := settingService.SetWebCertMode("acme_http"); err != nil {
+			return false, err
+		}
+		if err := settingService.SetWebCertProvider(snapshot.provider); err != nil {
+			return false, err
+		}
+	} else if fileExists(managedCertFile) && fileExists(managedKeyFile) {
 		if err := settingService.SetWebCertStatus("uploaded"); err != nil {
 			return false, err
 		}
@@ -396,6 +375,70 @@ func (s *CertService) DisableHTTPS() (bool, error) {
 	return true, nil
 }
 
+func (s *CertService) IssueHTTP(domain string, email string, staging bool) (*entity.AcmeIssueResult, error) {
+	settingService := &SettingService{}
+
+	resolvedDomain, err := s.resolveIssueDomain(settingService, domain)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateEmail(email); err != nil {
+		return nil, err
+	}
+
+	checkResult, err := s.CheckDomain(resolvedDomain)
+	if err != nil {
+		return nil, err
+	}
+	if !checkResult.Matched {
+		return nil, errors.New("domain does not resolve to current server IP")
+	}
+	if err := s.ensurePortAvailable(80); err != nil {
+		return nil, err
+	}
+	if err := s.ensureAcmeInstalled(email); err != nil {
+		return nil, err
+	}
+	if err := s.ensureSocatInstalled(); err != nil {
+		return nil, err
+	}
+
+	certFile, keyFile := s.acmePanelPaths()
+	if err := os.MkdirAll(filepath.Dir(certFile), 0755); err != nil {
+		return nil, err
+	}
+	if err := s.issueAcmeCertificate(resolvedDomain, staging); err != nil {
+		return nil, err
+	}
+	if err := s.installAcmeCertificate(resolvedDomain, certFile, keyFile); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(certFile, 0644); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(keyFile, 0600); err != nil {
+		return nil, err
+	}
+
+	if err := settingService.SetWebDomain(resolvedDomain); err != nil {
+		return nil, err
+	}
+	applied, err := s.applyHTTPSCertificate(certFile, keyFile, "acme_http", "letsencrypt", "enabled", false)
+	if err != nil {
+		return nil, err
+	}
+	status, err := s.GetStatus()
+	if err != nil {
+		return nil, err
+	}
+	return &entity.AcmeIssueResult{
+		Domain:  resolvedDomain,
+		Staging: staging,
+		Applied: applied,
+		Status:  status,
+	}, nil
+}
+
 func (s *CertService) managedPanelPaths() (string, string) {
 	dir := strings.TrimSpace(s.panelCertDir)
 	if dir == "" {
@@ -404,12 +447,23 @@ func (s *CertService) managedPanelPaths() (string, string) {
 	return filepath.Join(dir, "panel.crt"), filepath.Join(dir, "panel.key")
 }
 
+func (s *CertService) acmePanelPaths() (string, string) {
+	dir := strings.TrimSpace(s.panelCertDir)
+	if dir == "" {
+		dir = defaultPanelCertDir
+	}
+	return filepath.Join(dir, "acme-panel.crt"), filepath.Join(dir, "acme-panel.key")
+}
+
 func (s *CertService) resolveStatusPaths(webCertFile string, webKeyFile string, webCertMode string) (string, string) {
 	if webCertFile != "" || webKeyFile != "" {
 		return webCertFile, webKeyFile
 	}
 	if webCertMode == "manual" {
 		return s.managedPanelPaths()
+	}
+	if webCertMode == "acme_http" {
+		return s.acmePanelPaths()
 	}
 	return webCertFile, webKeyFile
 }
@@ -434,17 +488,28 @@ func (s *CertService) resolveEnablePaths(settingService *SettingService) (string
 	if err != nil {
 		return "", "", err
 	}
-	if mode != "manual" {
+	if mode != "manual" && mode != "acme_http" {
 		return "", "", errors.New("webCertFile and webKeyFile are not configured")
 	}
-	certFile, keyFile = s.managedPanelPaths()
+	if mode == "acme_http" {
+		certFile, keyFile = s.acmePanelPaths()
+	} else {
+		certFile, keyFile = s.managedPanelPaths()
+	}
 	if !fileExists(certFile) || !fileExists(keyFile) {
+		if mode == "acme_http" {
+			return "", "", errors.New("managed acme certificate files do not exist")
+		}
 		return "", "", errors.New("managed manual certificate files do not exist")
 	}
 	return certFile, keyFile, nil
 }
 
 func (s *CertService) captureSettings(settingService *SettingService) (*certSettingsSnapshot, error) {
+	domain, err := settingService.GetWebDomain()
+	if err != nil {
+		return nil, err
+	}
 	certFile, err := settingService.GetCertFile()
 	if err != nil {
 		return nil, err
@@ -479,6 +544,7 @@ func (s *CertService) captureSettings(settingService *SettingService) (*certSett
 	}
 
 	return &certSettingsSnapshot{
+		domain:    domain,
 		certFile:  certFile,
 		keyFile:   keyFile,
 		status:    status,
@@ -495,6 +561,7 @@ func (s *CertService) restoreSettings(settingService *SettingService, snapshot *
 		return nil
 	}
 	return common.Combine(
+		settingService.SetWebDomain(snapshot.domain),
 		settingService.SetCertFile(snapshot.certFile),
 		settingService.SetKeyFile(snapshot.keyFile),
 		settingService.SetWebCertStatus(snapshot.status),
@@ -506,11 +573,88 @@ func (s *CertService) restoreSettings(settingService *SettingService, snapshot *
 	)
 }
 
+func (s *CertService) applyHTTPSCertificate(certFile string, keyFile string, mode string, provider string, status string, autoRenew bool) (bool, error) {
+	settingService := &SettingService{}
+	snapshot, err := s.captureSettings(settingService)
+	if err != nil {
+		return false, err
+	}
+	port, err := s.getPanelPort(settingService)
+	if err != nil {
+		return false, err
+	}
+	info, err := readCertificateInfoFromFiles(certFile, keyFile)
+	if err != nil {
+		return false, err
+	}
+
+	if err := settingService.SetCertFile(certFile); err != nil {
+		return false, err
+	}
+	if err := settingService.SetKeyFile(keyFile); err != nil {
+		return false, err
+	}
+	if err := settingService.SetWebCertStatus(status); err != nil {
+		return false, err
+	}
+	if err := settingService.SetWebCertMode(mode); err != nil {
+		return false, err
+	}
+	if err := settingService.SetWebCertProvider(provider); err != nil {
+		return false, err
+	}
+	if err := settingService.SetWebCertIssuer(info.issuer); err != nil {
+		return false, err
+	}
+	if err := settingService.SetWebCertExpireAt(info.expireAt); err != nil {
+		return false, err
+	}
+	if err := settingService.SetWebCertAutoRenew(autoRenew); err != nil {
+		return false, err
+	}
+
+	if err := s.restart(defaultRestartDelay); err != nil {
+		restoreErr := s.restoreSettings(settingService, snapshot)
+		restartRestoreErr := s.restart(defaultRestartDelay)
+		return false, common.Combine(err, restoreErr, restartRestoreErr)
+	}
+	if err := s.waitForHTTPSReady(port, defaultListenerWaitTimeout); err != nil {
+		return false, s.rollbackListenerState(
+			settingService,
+			snapshot,
+			port,
+			errors.New("HTTPS listener not ready after restart"),
+			err,
+		)
+	}
+
+	return true, nil
+}
+
 func (s *CertService) restart(delay time.Duration) error {
 	if s.restartPanel != nil {
 		return s.restartPanel(delay)
 	}
 	return (&PanelService{}).RestartPanel(delay)
+}
+
+func (s *CertService) resolveIssueDomain(settingService *SettingService, domain string) (string, error) {
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		var err error
+		domain, err = settingService.GetWebDomain()
+		if err != nil {
+			return "", err
+		}
+		domain = strings.TrimSpace(domain)
+	}
+	if domain == "" {
+		return "", errors.New("domain is required")
+	}
+	if err := validateDomain(domain); err != nil {
+		return "", err
+	}
+	return domain, nil
 }
 
 func (s *CertService) getPanelPort(settingService *SettingService) (int, error) {
@@ -603,6 +747,109 @@ func (s *CertService) lookupPublicServerIPs() []string {
 	return getPublicServerIPs()
 }
 
+func (s *CertService) ensurePortAvailable(port int) error {
+	addr := fmt.Sprintf(":%d", port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("port %d is not available: %w", port, err)
+	}
+	return listener.Close()
+}
+
+func (s *CertService) ensureAcmeInstalled(email string) error {
+	acmePath := s.acmeBinaryPath()
+	if fileExists(acmePath) {
+		return nil
+	}
+	scriptPath := "/usr/local/x-ui/scripts/acme_install.sh"
+	if !fileExists(scriptPath) {
+		return errors.New("acme install script not found")
+	}
+	args := []string{scriptPath}
+	if email != "" {
+		args = append(args, "email="+email)
+	}
+	if _, err := s.command("sh", args...); err != nil {
+		return fmt.Errorf("install acme.sh failed: %w", err)
+	}
+	if !fileExists(acmePath) {
+		return errors.New("acme.sh installation did not produce executable")
+	}
+	return nil
+}
+
+func (s *CertService) ensureSocatInstalled() error {
+	if _, err := exec.LookPath("socat"); err == nil {
+		return nil
+	}
+	osRelease, _ := os.ReadFile("/etc/os-release")
+	content := strings.ToLower(string(osRelease))
+	switch {
+	case strings.Contains(content, "debian"), strings.Contains(content, "ubuntu"):
+		if _, err := s.command("apt-get", "update"); err != nil {
+			return fmt.Errorf("install socat failed during apt-get update: %w", err)
+		}
+		if _, err := s.command("apt-get", "install", "-y", "socat"); err != nil {
+			return fmt.Errorf("install socat failed: %w", err)
+		}
+	case strings.Contains(content, "centos"), strings.Contains(content, "rocky"), strings.Contains(content, "alma"), strings.Contains(content, "rhel"):
+		if _, err := s.command("sh", "-c", "command -v dnf >/dev/null 2>&1 && dnf install -y socat || yum install -y socat"); err != nil {
+			return fmt.Errorf("install socat failed: %w", err)
+		}
+	default:
+		return errors.New("socat is required for acme standalone mode; please install socat")
+	}
+	if _, err := exec.LookPath("socat"); err != nil {
+		return errors.New("socat install completed but executable not found")
+	}
+	return nil
+}
+
+func (s *CertService) issueAcmeCertificate(domain string, staging bool) error {
+	acmePath := s.acmeBinaryPath()
+	if !staging {
+		if _, err := s.command(acmePath, "--set-default-ca", "--server", "letsencrypt"); err != nil {
+			return fmt.Errorf("set default acme ca failed: %w", err)
+		}
+	}
+	args := []string{"--issue", "-d", domain, "--standalone", "--httpport", "80"}
+	if staging {
+		args = append(args, "--staging")
+	}
+	if _, err := s.command(acmePath, args...); err != nil {
+		return fmt.Errorf("issue acme certificate failed: %w", err)
+	}
+	return nil
+}
+
+func (s *CertService) installAcmeCertificate(domain string, certFile string, keyFile string) error {
+	acmePath := s.acmeBinaryPath()
+	if _, err := s.command(acmePath, "--install-cert", "-d", domain, "--cert-file", certFile, "--key-file", keyFile); err != nil {
+		return fmt.Errorf("install acme certificate failed: %w", err)
+	}
+	return nil
+}
+
+func (s *CertService) acmeBinaryPath() string {
+	home := strings.TrimSpace(os.Getenv("HOME"))
+	if home == "" {
+		home = "/root"
+	}
+	return filepath.Join(home, ".acme.sh", "acme.sh")
+}
+
+func (s *CertService) command(name string, args ...string) ([]byte, error) {
+	if s.runCommand != nil {
+		return s.runCommand(name, args...)
+	}
+	cmd := exec.Command(name, args...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return output, fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
+	}
+	return output, nil
+}
+
 func validateDomain(domain string) error {
 	if strings.Contains(domain, "://") {
 		return errors.New("domain must not include scheme")
@@ -643,6 +890,17 @@ func validateDomain(domain string) error {
 		}
 	}
 
+	return nil
+}
+
+func validateEmail(email string) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return errors.New("email is required")
+	}
+	if strings.ContainsAny(email, " \t\r\n") || !strings.Contains(email, "@") {
+		return errors.New("email format is invalid")
+	}
 	return nil
 }
 

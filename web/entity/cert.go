@@ -29,3 +29,10 @@ type DomainCheckResult struct {
 	Matched   bool     `json:"matched"`
 	Warnings  []string `json:"warnings"`
 }
+
+type AcmeIssueResult struct {
+	Domain  string      `json:"domain"`
+	Staging bool        `json:"staging"`
+	Applied bool        `json:"applied"`
+	Status  *CertStatus `json:"status"`
+}

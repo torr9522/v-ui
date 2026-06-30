@@ -22,6 +22,12 @@ type certUploadRequest struct {
 	KeyPEM  string `json:"keyPem" form:"keyPem"`
 }
 
+type certIssueHTTPRequest struct {
+	Domain  string `json:"domain" form:"domain"`
+	Email   string `json:"email" form:"email"`
+	Staging bool   `json:"staging" form:"staging"`
+}
+
 func NewCertController(g *gin.RouterGroup) *CertController {
 	a := &CertController{}
 	a.initRouter(g)
@@ -36,6 +42,7 @@ func (a *CertController) initRouter(g *gin.RouterGroup) {
 	g.POST("/setDomain", a.setDomain)
 	g.POST("/checkDomain", a.checkDomain)
 	g.POST("/upload", a.upload)
+	g.POST("/issueHttp", a.issueHTTP)
 	g.POST("/enableHttps", a.enableHTTPS)
 	g.POST("/disableHttps", a.disableHTTPS)
 }
@@ -98,6 +105,20 @@ func (a *CertController) upload(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, entity.Msg{Success: true, Msg: "upload certificate success", Obj: gin.H{"status": status, "applied": false}})
+}
+
+func (a *CertController) issueHTTP(c *gin.Context) {
+	req := &certIssueHTTPRequest{}
+	if err := c.ShouldBind(req); err != nil {
+		jsonMsg(c, "issue http certificate", err)
+		return
+	}
+	result, err := a.certService.IssueHTTP(req.Domain, req.Email, req.Staging)
+	if err != nil {
+		c.JSON(http.StatusOK, entity.Msg{Success: false, Msg: err.Error(), Obj: nil})
+		return
+	}
+	c.JSON(http.StatusOK, entity.Msg{Success: true, Msg: "issue http certificate success", Obj: result})
 }
 
 func (a *CertController) enableHTTPS(c *gin.Context) {

@@ -35,7 +35,7 @@
                 <a-alert
                     type="info"
                     show-icon
-                    message="本阶段为手动证书管理：支持上传证书、启用 HTTPS、禁用 HTTPS；暂不包含 ACME 自动申请。"
+                    message="当前支持手动证书与 Let’s Encrypt HTTP-01 骨架申请；需要域名解析正确且 80 端口可用。"
                     style="margin-bottom: 20px;">
                 </a-alert>
 
@@ -44,6 +44,7 @@
                         <a-card hoverable>
                             <div slot="title" class="cert-actions">
                                 <a-button type="primary" icon="upload" @click="openUploadModal">上传证书</a-button>
+                                <a-button icon="cloud" @click="openIssueHTTPModal">申请 Let’s Encrypt（HTTP-01）</a-button>
                                 <a-button icon="safety" @click="enableHTTPS">启用 HTTPS</a-button>
                                 <a-button icon="disconnect" @click="disableHTTPS">禁用 HTTPS</a-button>
                                 <a-button icon="reload" @click="getStatus">刷新</a-button>
@@ -157,6 +158,35 @@
                         </a-form-item>
                     </a-form>
                 </a-modal>
+
+                <a-modal v-model="issueHttpModal.visible"
+                         title="申请 Let’s Encrypt（HTTP-01）"
+                         :confirm-loading="issueHttpModal.confirmLoading"
+                         :mask-closable="false"
+                         ok-text="开始申请"
+                         cancel-text="取消"
+                         @ok="submitIssueHTTP">
+                    <a-alert
+                        type="info"
+                        show-icon
+                        message="申请前请确认域名已解析到当前服务器，且 80 端口可被 acme.sh standalone 模式占用。">
+                    </a-alert>
+                    <a-form layout="vertical" style="margin-top: 16px;">
+                        <a-form-item label="域名">
+                            <a-input v-model.trim="issueHttpModal.form.domain" placeholder="panel.example.com"></a-input>
+                        </a-form-item>
+                        <a-form-item label="邮箱">
+                            <a-input v-model.trim="issueHttpModal.form.email" placeholder="admin@example.com"></a-input>
+                        </a-form-item>
+                        <a-form-item label="申请模式">
+                            <a-switch
+                                checked-children="Staging"
+                                un-checked-children="Production"
+                                v-model="issueHttpModal.form.staging">
+                            </a-switch>
+                        </a-form-item>
+                    </a-form>
+                </a-modal>
             </a-spin>
         </a-layout-content>
     </a-layout>
@@ -208,6 +238,15 @@
                     keyPem: '',
                 },
             },
+            issueHttpModal: {
+                visible: false,
+                confirmLoading: false,
+                form: {
+                    domain: '',
+                    email: '',
+                    staging: false,
+                },
+            },
         },
         methods: {
             loading(spinning = true) {
@@ -225,6 +264,9 @@
             applyStatus(status) {
                 this.status = Object.assign({}, this.status, status || {});
                 this.domainForm.domain = this.status.webDomain || '';
+                if (!this.issueHttpModal.form.domain) {
+                    this.issueHttpModal.form.domain = this.status.webDomain || '';
+                }
             },
             redirectToScheme(protocol, message) {
                 if (window.location.protocol === protocol) {
@@ -237,6 +279,10 @@
             openUploadModal() {
                 this.uploadModal.visible = true;
             },
+            openIssueHTTPModal() {
+                this.issueHttpModal.form.domain = this.domainForm.domain || this.status.webDomain || '';
+                this.issueHttpModal.visible = true;
+            },
             resetUploadModal() {
                 this.uploadModal.visible = false;
                 this.uploadModal.confirmLoading = false;
@@ -244,6 +290,10 @@
                     certPem: '',
                     keyPem: '',
                 };
+            },
+            resetIssueHTTPModal() {
+                this.issueHttpModal.visible = false;
+                this.issueHttpModal.confirmLoading = false;
             },
             async submitUpload() {
                 this.uploadModal.confirmLoading = true;
@@ -254,6 +304,19 @@
                 }
                 this.applyStatus(msg.obj ? msg.obj.status : null);
                 this.resetUploadModal();
+            },
+            async submitIssueHTTP() {
+                this.issueHttpModal.confirmLoading = true;
+                const msg = await HttpUtil.post('/xui/cert/issueHttp', this.issueHttpModal.form);
+                this.issueHttpModal.confirmLoading = false;
+                if (!msg.success) {
+                    return;
+                }
+                this.applyStatus(msg.obj ? msg.obj.status : null);
+                this.resetIssueHTTPModal();
+                if (msg.obj && msg.obj.status && msg.obj.status.httpsActive) {
+                    this.redirectToScheme('https:', '证书已申请并启用 HTTPS，正在跳转到安全地址');
+                }
             },
             async enableHTTPS() {
                 this.loading(true);
@@ -329,6 +392,8 @@
                         return 'green';
                     case 'uploaded':
                         return 'blue';
+                    case 'issued':
+                        return 'cyan';
                     case 'expired':
                         return 'red';
                     case 'unknown':
