@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -18,51 +17,34 @@ import (
 	"time"
 	"x-ui/logger"
 	"x-ui/util/common"
-	"x-ui/util/random"
 	"x-ui/web/entity"
 )
 
 const (
-	defaultPanelCertDir          = "/usr/local/x-ui/cert"
-	defaultPanelCertFile         = defaultPanelCertDir + "/panel.crt"
-	defaultPanelKeyFile          = defaultPanelCertDir + "/panel.key"
-	defaultAcmePanelCertFile     = defaultPanelCertDir + "/acme-panel.crt"
-	defaultAcmePanelKeyFile      = defaultPanelCertDir + "/acme-panel.key"
-	defaultRestartDelay          = 3 * time.Second
-	defaultListenerWaitTimeout   = 15 * time.Second
-	defaultListenerRetryDelay    = 500 * time.Millisecond
-	defaultProbeTimeout          = 2 * time.Second
-	defaultTXTPropagationTimeout = 2 * time.Minute
-	defaultTXTPropagationRetry   = 2 * time.Second
-	errAcmeFullchainMissing      = "ACME_FULLCHAIN_MISSING"
+	defaultPanelCertDir        = "/usr/local/x-ui/cert"
+	defaultPanelCertFile       = defaultPanelCertDir + "/panel.crt"
+	defaultPanelKeyFile        = defaultPanelCertDir + "/panel.key"
+	defaultAcmePanelCertFile   = defaultPanelCertDir + "/acme-panel.crt"
+	defaultAcmePanelKeyFile    = defaultPanelCertDir + "/acme-panel.key"
+	defaultRestartDelay        = 3 * time.Second
+	defaultListenerWaitTimeout = 15 * time.Second
+	defaultListenerRetryDelay  = 500 * time.Millisecond
+	defaultProbeTimeout        = 2 * time.Second
+	errAcmeFullchainMissing    = "ACME_FULLCHAIN_MISSING"
 )
 
 type CertService struct {
-	panelCertDir             string
-	restartPanel             func(time.Duration) error
-	publicIPs                func() []string
-	panelPort                func() (int, error)
-	waitHTTPSReadyFn         func(int, time.Duration) error
-	waitHTTPReadyFn          func(int, time.Duration) error
-	runCommand               func(name string, args ...string) ([]byte, error)
-	acmeSearchHomes          []string
-	envLookup                func(string) string
-	lookPath                 func(string) (string, error)
-	userHomeDir              func() (string, error)
-	txtPropagationTimeout    time.Duration
-	txtPropagationRetry      time.Duration
-	lookupTXT                func(context.Context, string) ([]string, error)
-	cloudflareProvider       certCloudflareProvider
-	issueACMEDNSCloudflareFn func(string, bool, *entity.CloudflareStatus, *entity.CloudflareZone) error
-	installACMECertificateFn func(string, string, string) error
-	applyHTTPSCertificateFn  func(string, string, string, string, string, bool) (bool, error)
-}
-
-type certCloudflareProvider interface {
-	GetStatus() (*entity.CloudflareStatus, error)
-	DetectZoneByDomain(string) (*entity.CloudflareZone, error)
-	CreateTXTRecord(string, string, string) (*entity.CloudflareDNSRecord, error)
-	DeleteTXTRecord(string, string) error
+	panelCertDir     string
+	restartPanel     func(time.Duration) error
+	publicIPs        func() []string
+	panelPort        func() (int, error)
+	waitHTTPSReadyFn func(int, time.Duration) error
+	waitHTTPReadyFn  func(int, time.Duration) error
+	runCommand       func(name string, args ...string) ([]byte, error)
+	acmeSearchHomes  []string
+	envLookup        func(string) string
+	lookPath         func(string) (string, error)
+	userHomeDir      func() (string, error)
 }
 
 type certInfo struct {
@@ -360,11 +342,11 @@ func (s *CertService) DisableHTTPS() (bool, error) {
 
 	managedCertFile, managedKeyFile := s.managedPanelPaths()
 	acmeCertFile, acmeKeyFile := s.acmePanelPaths()
-	if (snapshot.mode == "acme_http" || snapshot.mode == "acme_dns_cf") && fileExists(acmeCertFile) && fileExists(acmeKeyFile) {
+	if snapshot.mode == "acme_http" && fileExists(acmeCertFile) && fileExists(acmeKeyFile) {
 		if err := settingService.SetWebCertStatus("issued"); err != nil {
 			return false, err
 		}
-		if err := settingService.SetWebCertMode(snapshot.mode); err != nil {
+		if err := settingService.SetWebCertMode("acme_http"); err != nil {
 			return false, err
 		}
 		if err := settingService.SetWebCertProvider(snapshot.provider); err != nil {
@@ -458,92 +440,7 @@ func (s *CertService) IssueHTTP(domain string, email string, staging bool) (*ent
 	if err := settingService.SetWebDomain(resolvedDomain); err != nil {
 		return nil, err
 	}
-	applied, err := s.applyCertificate(certFile, keyFile, "acme_http", "letsencrypt", "enabled", false)
-	if err != nil {
-		return nil, err
-	}
-	status, err := s.GetStatus()
-	if err != nil {
-		return nil, err
-	}
-	return &entity.AcmeIssueResult{
-		Domain:  resolvedDomain,
-		Staging: staging,
-		Applied: applied,
-		Status:  status,
-	}, nil
-}
-
-func (s *CertService) IssueDNSCloudflare(domain string, email string, staging bool) (*entity.AcmeIssueResult, error) {
-	settingService := &SettingService{}
-
-	resolvedDomain, err := s.resolveIssueDomain(settingService, domain)
-	if err != nil {
-		return nil, err
-	}
-	if err := validateEmail(email); err != nil {
-		return nil, err
-	}
-	if err := s.ensureAcmeInstalled(email); err != nil {
-		return nil, err
-	}
-
-	cloudflareProvider := s.getCloudflareProvider()
-	cloudflareStatus, err := cloudflareProvider.GetStatus()
-	if err != nil {
-		return nil, err
-	}
-	if !cloudflareStatus.Enabled {
-		return nil, errors.New("cloudflare integration is disabled")
-	}
-	if cloudflareStatus.AuthMode == "none" {
-		return nil, errors.New("cloudflare credentials are not configured")
-	}
-
-	zone, err := cloudflareProvider.DetectZoneByDomain(resolvedDomain)
-	if err != nil {
-		return nil, err
-	}
-
-	challengeName := "_acme-challenge." + resolvedDomain
-	challengeValue := random.Seq(32)
-	record, err := cloudflareProvider.CreateTXTRecord(zone.ID, challengeName, challengeValue)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if record != nil {
-			if err := cloudflareProvider.DeleteTXTRecord(zone.ID, record.ID); err != nil {
-				logger.Warning("delete cloudflare challenge record failed:", err)
-			}
-		}
-	}()
-
-	if err := s.waitForTXTPropagation(challengeName, challengeValue, s.txtPropagationWaitTimeout(), s.txtPropagationWaitRetry()); err != nil {
-		return nil, err
-	}
-
-	certFile, keyFile := s.acmePanelPaths()
-	if err := os.MkdirAll(filepath.Dir(certFile), 0755); err != nil {
-		return nil, err
-	}
-	if err := s.issueACMEDNSCloudflare(resolvedDomain, staging, cloudflareStatus, zone); err != nil {
-		return nil, err
-	}
-	if err := s.installManagedACMECertificate(resolvedDomain, certFile, keyFile); err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(certFile, 0644); err != nil {
-		return nil, err
-	}
-	if err := os.Chmod(keyFile, 0600); err != nil {
-		return nil, err
-	}
-
-	if err := settingService.SetWebDomain(resolvedDomain); err != nil {
-		return nil, err
-	}
-	applied, err := s.applyCertificate(certFile, keyFile, "acme_dns_cf", "letsencrypt", "enabled", false)
+	applied, err := s.applyHTTPSCertificate(certFile, keyFile, "acme_http", "letsencrypt", "enabled", false)
 	if err != nil {
 		return nil, err
 	}
@@ -582,7 +479,7 @@ func (s *CertService) resolveStatusPaths(webCertFile string, webKeyFile string, 
 	if webCertMode == "manual" {
 		return s.managedPanelPaths()
 	}
-	if webCertMode == "acme_http" || webCertMode == "acme_dns_cf" {
+	if webCertMode == "acme_http" {
 		return s.acmePanelPaths()
 	}
 	return webCertFile, webKeyFile
@@ -608,16 +505,16 @@ func (s *CertService) resolveEnablePaths(settingService *SettingService) (string
 	if err != nil {
 		return "", "", err
 	}
-	if mode != "manual" && mode != "acme_http" && mode != "acme_dns_cf" {
+	if mode != "manual" && mode != "acme_http" {
 		return "", "", errors.New("webCertFile and webKeyFile are not configured")
 	}
-	if mode == "acme_http" || mode == "acme_dns_cf" {
+	if mode == "acme_http" {
 		certFile, keyFile = s.acmePanelPaths()
 	} else {
 		certFile, keyFile = s.managedPanelPaths()
 	}
 	if !fileExists(certFile) || !fileExists(keyFile) {
-		if mode == "acme_http" || mode == "acme_dns_cf" {
+		if mode == "acme_http" {
 			return "", "", errors.New("managed acme certificate files do not exist")
 		}
 		return "", "", errors.New("managed manual certificate files do not exist")
@@ -948,49 +845,6 @@ func (s *CertService) issueAcmeCertificate(domain string, staging bool) error {
 	return nil
 }
 
-func (s *CertService) issueACMEDNSCloudflare(domain string, staging bool, cloudflareStatus *entity.CloudflareStatus, zone *entity.CloudflareZone) error {
-	if s.issueACMEDNSCloudflareFn != nil {
-		return s.issueACMEDNSCloudflareFn(domain, staging, cloudflareStatus, zone)
-	}
-
-	acmeHome, acmePath, err := s.findAcmeSh()
-	if err != nil {
-		return err
-	}
-	env := []string{
-		"HOME=/root",
-		"ACMESH_HOME=" + acmeHome,
-	}
-	switch cloudflareStatus.AuthMode {
-	case "api_token":
-		env = append(env, "CF_Token="+cloudflareStatus.APIToken)
-		if zone != nil && zone.ID != "" {
-			env = append(env, "CF_Zone_ID="+zone.ID)
-		}
-		if cloudflareStatus.AccountID != "" {
-			env = append(env, "CF_Account_ID="+cloudflareStatus.AccountID)
-		}
-	case "global_api_key":
-		env = append(env, "CF_Email="+cloudflareStatus.Email, "CF_Key="+cloudflareStatus.APIKey)
-	default:
-		return errors.New("cloudflare credentials are not configured")
-	}
-
-	if !staging {
-		if _, err := s.commandWithEnv(env, acmePath, "--home", acmeHome, "--set-default-ca", "--server", "letsencrypt"); err != nil {
-			return fmt.Errorf("set default acme ca failed: %w", err)
-		}
-	}
-	args := []string{"--home", acmeHome, "--issue", "-d", domain, "--dns", "dns_cf"}
-	if staging {
-		args = append(args, "--staging")
-	}
-	if _, err := s.commandWithEnv(env, acmePath, args...); err != nil {
-		return fmt.Errorf("issue acme certificate failed: %w", err)
-	}
-	return nil
-}
-
 func (s *CertService) installAcmeCertificate(domain string, certFile string, keyFile string) error {
 	acmeHome, acmePath, err := s.findAcmeSh()
 	if err != nil {
@@ -1003,13 +857,6 @@ func (s *CertService) installAcmeCertificate(domain string, certFile string, key
 		return err
 	}
 	return nil
-}
-
-func (s *CertService) installManagedACMECertificate(domain string, certFile string, keyFile string) error {
-	if s.installACMECertificateFn != nil {
-		return s.installACMECertificateFn(domain, certFile, keyFile)
-	}
-	return s.installAcmeCertificate(domain, certFile, keyFile)
 }
 
 func (s *CertService) findAcmeSh() (string, string, error) {
@@ -1102,74 +949,6 @@ func (s *CertService) command(name string, args ...string) ([]byte, error) {
 		return output, fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
 	}
 	return output, nil
-}
-
-func (s *CertService) commandWithEnv(env []string, name string, args ...string) ([]byte, error) {
-	if s.runCommand != nil {
-		return s.runCommand(name, args...)
-	}
-	cmd := exec.Command(name, args...)
-	cmd.Env = append(os.Environ(), env...)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return output, fmt.Errorf("%s: %w", strings.TrimSpace(string(output)), err)
-	}
-	return output, nil
-}
-
-func (s *CertService) applyCertificate(certFile string, keyFile string, mode string, provider string, status string, autoRenew bool) (bool, error) {
-	if s.applyHTTPSCertificateFn != nil {
-		return s.applyHTTPSCertificateFn(certFile, keyFile, mode, provider, status, autoRenew)
-	}
-	return s.applyHTTPSCertificate(certFile, keyFile, mode, provider, status, autoRenew)
-}
-
-func (s *CertService) getCloudflareProvider() certCloudflareProvider {
-	if s.cloudflareProvider != nil {
-		return s.cloudflareProvider
-	}
-	return &CloudflareService{}
-}
-
-func (s *CertService) lookupTXTRecords(ctx context.Context, name string) ([]string, error) {
-	if s.lookupTXT != nil {
-		return s.lookupTXT(ctx, name)
-	}
-	return net.DefaultResolver.LookupTXT(ctx, name)
-}
-
-func (s *CertService) waitForTXTPropagation(name string, expected string, timeout time.Duration, retryInterval time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultProbeTimeout)
-		values, err := s.lookupTXTRecords(ctx, name)
-		cancel()
-		if err == nil {
-			for _, value := range values {
-				if strings.TrimSpace(value) == expected {
-					return nil
-				}
-			}
-		}
-		if time.Now().After(deadline) {
-			return errors.New("dns txt propagation timed out")
-		}
-		time.Sleep(retryInterval)
-	}
-}
-
-func (s *CertService) txtPropagationWaitTimeout() time.Duration {
-	if s.txtPropagationTimeout > 0 {
-		return s.txtPropagationTimeout
-	}
-	return defaultTXTPropagationTimeout
-}
-
-func (s *CertService) txtPropagationWaitRetry() time.Duration {
-	if s.txtPropagationRetry > 0 {
-		return s.txtPropagationRetry
-	}
-	return defaultTXTPropagationRetry
 }
 
 func validateDomain(domain string) error {
