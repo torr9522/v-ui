@@ -188,22 +188,23 @@
                 }
             },
             async loadUsableCertificates(autofill=false) {
-                const cert = this.currentTlsCertificate();
+                const vm = inModalApp || this;
+                const cert = vm.currentTlsCertificate();
                 if (!cert.useFile || !(this.inbound.tls || this.inbound.xtls)) {
-                    this.inModal.usableCertificates = [];
-                    this.inModal.usableCertificatesLoading = false;
+                    vm.inModal.usableCertificates = [];
+                    vm.inModal.usableCertificatesLoading = false;
                     return;
                 }
-                this.inModal.usableCertificatesLoading = true;
+                vm.inModal.usableCertificatesLoading = true;
                 const msg = await HttpUtil.post('/xui/cert/listUsable');
-                this.inModal.usableCertificatesLoading = false;
+                vm.inModal.usableCertificatesLoading = false;
                 if (!msg.success || !Array.isArray(msg.obj)) {
-                    this.inModal.usableCertificates = [];
+                    vm.inModal.usableCertificates = [];
                     return;
                 }
-                this.inModal.usableCertificates = msg.obj;
-                if (autofill) {
-                    this.autoApplyUsableCertificate();
+                vm.inModal.usableCertificates = msg.obj;
+                if (autofill && typeof vm.autoApplyUsableCertificate === 'function') {
+                    vm.autoApplyUsableCertificate();
                 }
             },
             applyUsableCertificateByID(id) {
@@ -243,11 +244,12 @@
                 return certificate.issuer || certificate.mode || '-';
             },
             async ensureUsableCertificates() {
-                const cert = this.currentTlsCertificate();
+                const vm = inModalApp || this;
+                const cert = vm.currentTlsCertificate();
                 if (!cert.useFile || !(this.inbound.tls || this.inbound.xtls)) {
                     return;
                 }
-                await this.loadUsableCertificates(true);
+                await vm.loadUsableCertificates(true);
             },
             streamNetworkChange(oldValue) {
                 if (oldValue === 'kcp') {
