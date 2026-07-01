@@ -16,6 +16,15 @@
     <a-form-item label="域名">
         <a-input v-model.trim="inbound.stream.tls.server"></a-input>
     </a-form-item>
+    <a-form-item v-if="shouldShowUsableCertificateSelect()" label="本地证书">
+        <a-select :value="selectedUsableCertificate() ? selectedUsableCertificate().id : undefined"
+                  style="width: 280px;"
+                  @change="applyUsableCertificateByID">
+            <a-select-option v-for="certificate in usableCertificates()" :key="certificate.id" :value="certificate.id">
+                [[ certificate.name ]] ([[ certificate.mode ]])
+            </a-select-option>
+        </a-select>
+    </a-form-item>
     <a-form-item label="证书">
         <a-radio-group v-model="inbound.stream.tls.certs[0].useFile"
                        button-style="solid">
@@ -24,6 +33,21 @@
         </a-radio-group>
     </a-form-item>
     <template v-if="inbound.stream.tls.certs[0].useFile">
+        <a-form-item v-if="inModal.usableCertificatesLoading" label="证书提示">
+            <span>正在加载当前可用证书...</span>
+        </a-form-item>
+        <a-form-item v-else-if="hasTLSAutoFillNotice()" label="证书提示">
+            <span style="color: #52c41a;">[[ inModal.tlsAutoFillNotice ]]</span>
+        </a-form-item>
+        <a-form-item v-else-if="usableCertificates().length === 0" label="证书提示">
+            <span>未检测到当前可复用面板证书，可继续手工输入路径。</span>
+        </a-form-item>
+        <a-form-item v-if="selectedUsableCertificate()" label="当前证书">
+            <span>
+                来源：[[ selectedUsableCertificate().issuer || selectedUsableCertificate().mode ]]
+                ，Expires：[[ formatUsableCertificateExpireAt(selectedUsableCertificate().expireAt) ]]
+            </span>
+        </a-form-item>
         <a-form-item label="公钥文件路径">
             <a-input v-model.trim="inbound.stream.tls.certs[0].certFile"></a-input>
         </a-form-item>

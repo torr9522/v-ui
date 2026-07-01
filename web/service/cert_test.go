@@ -192,6 +192,131 @@ func TestGetStatusReportsMissingCertificateFiles(t *testing.T) {
 	}
 }
 
+func TestListUsableReturnsManualPanelCertificate(t *testing.T) {
+	initCertTestDB(t)
+
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"panel.example.com"}, time.Now().Add(48*time.Hour))
+	if err != nil {
+		t.Fatalf("generate cert failed: %v", err)
+	}
+
+	service := CertService{
+		panelCertDir: t.TempDir(),
+	}
+	if err := service.UploadCertificate(string(certPEM), string(keyPEM)); err != nil {
+		t.Fatalf("upload certificate failed: %v", err)
+	}
+
+	certificates, err := service.ListUsable()
+	if err != nil {
+		t.Fatalf("list usable certificates failed: %v", err)
+	}
+	if len(certificates) != 1 {
+		t.Fatalf("expected 1 usable certificate, got %d", len(certificates))
+	}
+	if certificates[0].ID != "panel" {
+		t.Fatalf("expected panel id, got %s", certificates[0].ID)
+	}
+	if certificates[0].Mode != "manual" {
+		t.Fatalf("expected manual mode, got %s", certificates[0].Mode)
+	}
+	if certificates[0].CertFile == "" || certificates[0].KeyFile == "" {
+		t.Fatalf("expected cert/key file to be populated")
+	}
+	if !certificates[0].Active {
+		t.Fatalf("expected uploaded manual certificate to be active candidate")
+	}
+}
+
+func TestListUsableReturnsInactiveAcmeCertificateWhenFilesExist(t *testing.T) {
+	initCertTestDB(t)
+
+	certPEM, keyPEM, err := generateSelfSignedCert([]string{"acme.example.com"}, time.Now().Add(72*time.Hour))
+	if err != nil {
+		t.Fatalf("generate cert failed: %v", err)
+	}
+
+	service := CertService{
+		panelCertDir: t.TempDir(),
+	}
+	certFile, keyFile := service.acmePanelPaths()
+	if err := os.MkdirAll(filepath.Dir(certFile), 0755); err != nil {
+		t.Fatalf("mkdir cert dir failed: %v", err)
+	}
+	if err := os.WriteFile(certFile, certPEM, 0644); err != nil {
+		t.Fatalf("write acme cert failed: %v", err)
+	}
+	if err := os.WriteFile(keyFile, keyPEM, 0600); err != nil {
+		t.Fatalf("write acme key failed: %v", err)
+	}
+
+	settingService := &SettingService{}
+	if err := settingService.SetWebDomain("acme.example.com"); err != nil {
+		t.Fatalf("set domain failed: %v", err)
+	}
+	if err := settingService.SetWebCertMode("acme_http"); err != nil {
+		t.Fatalf("set mode failed: %v", err)
+	}
+	if err := settingService.SetWebCertProvider("letsencrypt"); err != nil {
+		t.Fatalf("set provider failed: %v", err)
+	}
+	if err := settingService.SetWebCertStatus("issued"); err != nil {
+		t.Fatalf("set status failed: %v", err)
+	}
+	if err := settingService.SetWebCertIssuer("Test Issuer"); err != nil {
+		t.Fatalf("set issuer failed: %v", err)
+	}
+	if err := settingService.SetWebCertExpireAt(time.Now().Add(72 * time.Hour).Unix()); err != nil {
+		t.Fatalf("set expireAt failed: %v", err)
+	}
+	if err := settingService.SetCertFile(""); err != nil {
+		t.Fatalf("clear cert file failed: %v", err)
+	}
+	if err := settingService.SetKeyFile(""); err != nil {
+		t.Fatalf("clear key file failed: %v", err)
+	}
+
+	certificates, err := service.ListUsable()
+	if err != nil {
+		t.Fatalf("list usable certificates failed: %v", err)
+	}
+	if len(certificates) != 1 {
+		t.Fatalf("expected 1 usable certificate, got %d", len(certificates))
+	}
+	if certificates[0].Mode != "acme_http" {
+		t.Fatalf("expected acme_http mode, got %s", certificates[0].Mode)
+	}
+	if certificates[0].Active {
+		t.Fatalf("expected disabled https candidate to be inactive")
+	}
+	if certificates[0].CertFile != certFile || certificates[0].KeyFile != keyFile {
+		t.Fatalf("expected acme paths to be returned")
+	}
+}
+
+func TestListUsableReturnsEmptyForUnsupportedMode(t *testing.T) {
+	initCertTestDB(t)
+
+	settingService := &SettingService{}
+	if err := settingService.SetWebCertMode("none"); err != nil {
+		t.Fatalf("set mode failed: %v", err)
+	}
+	if err := settingService.SetCertFile(""); err != nil {
+		t.Fatalf("clear cert file failed: %v", err)
+	}
+	if err := settingService.SetKeyFile(""); err != nil {
+		t.Fatalf("clear key file failed: %v", err)
+	}
+
+	certificates, err := (&CertService{}).ListUsable()
+	if err != nil {
+		t.Fatalf("list usable certificates failed: %v", err)
+	}
+	if len(certificates) != 0 {
+		t.Fatalf("expected no usable certificates, got %d", len(certificates))
+	}
+}
+
 func TestEnableHTTPSRollsBackSettingsOnRestartFailure(t *testing.T) {
 	initCertTestDB(t)
 

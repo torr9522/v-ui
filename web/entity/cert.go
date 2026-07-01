@@ -37,3 +37,15 @@ type AcmeIssueResult struct {
 	Applied bool        `json:"applied"`
 	Status  *CertStatus `json:"status"`
 }
+
+type UsableCertificate struct {
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Mode     string `json:"mode"`
+	Domain   string `json:"domain"`
+	Issuer   string `json:"issuer"`
+	ExpireAt int64  `json:"expireAt"`
+	CertFile string `json:"certFile"`
+	KeyFile  string `json:"keyFile"`
+	Active   bool   `json:"active"`
+}

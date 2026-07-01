@@ -39,6 +39,7 @@ func (a *CertController) initRouter(g *gin.RouterGroup) {
 	g.Use(a.checkLogin)
 
 	g.POST("/status", a.getStatus)
+	g.POST("/listUsable", a.listUsable)
 	g.POST("/setDomain", a.setDomain)
 	g.POST("/checkDomain", a.checkDomain)
 	g.POST("/upload", a.upload)
@@ -54,6 +55,15 @@ func (a *CertController) getStatus(c *gin.Context) {
 		return
 	}
 	jsonObj(c, status, nil)
+}
+
+func (a *CertController) listUsable(c *gin.Context) {
+	certificates, err := a.certService.ListUsable()
+	if err != nil {
+		jsonMsg(c, "list usable certificates", err)
+		return
+	}
+	c.JSON(http.StatusOK, entity.Msg{Success: true, Msg: "", Obj: certificates})
 }
 
 func (a *CertController) setDomain(c *gin.Context) {

@@ -12,6 +12,11 @@
         confirmLoading: false,
         okText: '确定',
         confirm: null,
+        usableCertificates: [],
+        usableCertificatesLoading: false,
+        tlsAutoFillNotice: '',
+        lastAutoAppliedCertFile: '',
+        lastAutoAppliedKeyFile: '',
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
         ok() {
@@ -30,8 +35,29 @@
             } else {
                 this.dbInbound = new DBInbound();
             }
+            this.usableCertificates = [];
+            this.usableCertificatesLoading = false;
+            this.tlsAutoFillNotice = '';
+            this.lastAutoAppliedCertFile = '';
+            this.lastAutoAppliedKeyFile = '';
             this.confirm = confirm;
             this.visible = true;
+            if ((this.inbound.tls || this.inbound.xtls) && this.inbound.stream.tls.certs[0].useFile) {
+                this.loadUsableCertificates(true);
+            }
+        },
+        async loadUsableCertificates(autofill=false) {
+            this.usableCertificatesLoading = true;
+            const msg = await HttpUtil.post('/xui/cert/listUsable');
+            this.usableCertificatesLoading = false;
+            if (!msg.success || !Array.isArray(msg.obj)) {
+                this.usableCertificates = [];
+                return;
+            }
+            this.usableCertificates = msg.obj;
+            if (autofill) {
+                this.autoApplyUsableCertificate();
+            }
         },
         close() {
             inModal.visible = false;
@@ -77,9 +103,116 @@
             }
         },
         methods: {
+            usableCertificates() {
+                return Array.isArray(this.inModal.usableCertificates) ? this.inModal.usableCertificates : [];
+            },
+            selectedUsableCertificate() {
+                const cert = this.inbound.stream.tls.certs[0] || {};
+                const certFile = String(cert.certFile || '').trim();
+                const keyFile = String(cert.keyFile || '').trim();
+                if (!certFile || !keyFile) {
+                    return null;
+                }
+                return this.usableCertificates().find(item =>
+                    String(item.certFile || '').trim() === certFile &&
+                    String(item.keyFile || '').trim() === keyFile
+                ) || null;
+            },
+            shouldShowUsableCertificateSelect() {
+                return this.usableCertificates().length > 1 &&
+                    this.inbound.stream.tls.certs[0].useFile &&
+                    (this.inbound.tls || this.inbound.xtls);
+            },
+            hasTLSAutoFillNotice() {
+                if (!this.inModal.tlsAutoFillNotice) {
+                    return false;
+                }
+                const cert = this.inbound.stream.tls.certs[0] || {};
+                return String(cert.certFile || '').trim() === this.inModal.lastAutoAppliedCertFile &&
+                    String(cert.keyFile || '').trim() === this.inModal.lastAutoAppliedKeyFile;
+            },
+            shouldAutoApplyUsableCertificate(certificate) {
+                if (!certificate) {
+                    return false;
+                }
+                const cert = this.inbound.stream.tls.certs[0] || {};
+                const currentCertFile = String(cert.certFile || '').trim();
+                const currentKeyFile = String(cert.keyFile || '').trim();
+                if (currentCertFile === '' && currentKeyFile === '') {
+                    return true;
+                }
+                return currentCertFile === this.inModal.lastAutoAppliedCertFile &&
+                    currentKeyFile === this.inModal.lastAutoAppliedKeyFile;
+            },
+            applyUsableCertificate(certificate, options={}) {
+                if (!certificate) {
+                    return;
+                }
+                const auto = !!options.auto;
+                this.inbound.stream.tls.certs[0].useFile = true;
+                this.inbound.stream.tls.certs[0].certFile = certificate.certFile;
+                this.inbound.stream.tls.certs[0].keyFile = certificate.keyFile;
+                if (!String(this.inbound.stream.tls.server || '').trim() && String(certificate.domain || '').trim()) {
+                    this.inbound.stream.tls.server = certificate.domain;
+                }
+                if (auto) {
+                    this.inModal.lastAutoAppliedCertFile = certificate.certFile;
+                    this.inModal.lastAutoAppliedKeyFile = certificate.keyFile;
+                    this.inModal.tlsAutoFillNotice = '已自动使用当前面板证书。';
+                } else {
+                    this.inModal.tlsAutoFillNotice = '';
+                }
+            },
+            applyUsableCertificateByID(id) {
+                const certificate = this.usableCertificates().find(item => item.id === id);
+                this.applyUsableCertificate(certificate, { auto: false });
+            },
+            autoApplyUsableCertificate() {
+                if (this.usableCertificates().length !== 1) {
+                    return;
+                }
+                const certificate = this.usableCertificates()[0];
+                if (!this.shouldAutoApplyUsableCertificate(certificate)) {
+                    return;
+                }
+                this.applyUsableCertificate(certificate, { auto: true });
+            },
+            formatUsableCertificateExpireAt(expireAt) {
+                if (!expireAt) {
+                    return '-';
+                }
+                const date = new Date(expireAt * 1000);
+                if (Number.isNaN(date.getTime())) {
+                    return '-';
+                }
+                return date.toISOString().slice(0, 10);
+            },
+            async ensureUsableCertificates() {
+                if (!this.inbound.stream.tls.certs[0].useFile) {
+                    return;
+                }
+                await this.inModal.loadUsableCertificates(true);
+            },
             streamNetworkChange(oldValue) {
                 if (oldValue === 'kcp') {
                     this.inModal.inbound.tls = false;
+                }
+            }
+        },
+        watch: {
+            'inModal.inbound.tls': async function(enabled) {
+                if (enabled) {
+                    await this.ensureUsableCertificates();
+                }
+            },
+            'inModal.inbound.xtls': async function(enabled) {
+                if (enabled) {
+                    await this.ensureUsableCertificates();
+                }
+            },
+            'inModal.inbound.stream.tls.certs[0].useFile': async function(useFile) {
+                if (useFile && (this.inbound.tls || this.inbound.xtls)) {
+                    await this.ensureUsableCertificates();
                 }
             }
         }

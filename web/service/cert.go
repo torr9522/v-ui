@@ -70,6 +70,50 @@ type certSettingsSnapshot struct {
 	provider  string
 }
 
+func (s *CertService) ListUsable() ([]*entity.UsableCertificate, error) {
+	status, err := s.GetStatus()
+	if err != nil {
+		return nil, err
+	}
+	if status == nil {
+		return []*entity.UsableCertificate{}, nil
+	}
+
+	mode := strings.TrimSpace(status.WebCertMode)
+	switch mode {
+	case "manual", "acme_http":
+	default:
+		return []*entity.UsableCertificate{}, nil
+	}
+
+	if strings.TrimSpace(status.WebCertFile) == "" || strings.TrimSpace(status.WebKeyFile) == "" {
+		return []*entity.UsableCertificate{}, nil
+	}
+	if !status.CertExists || !status.KeyExists {
+		return []*entity.UsableCertificate{}, nil
+	}
+
+	domain := strings.TrimSpace(status.WebDomain)
+	if domain == "" && len(status.DNSNames) > 0 {
+		domain = strings.TrimSpace(status.DNSNames[0])
+	}
+	if domain == "" {
+		domain = strings.TrimSpace(status.Subject)
+	}
+
+	return []*entity.UsableCertificate{{
+		ID:       "panel",
+		Name:     "Panel Certificate",
+		Mode:     mode,
+		Domain:   domain,
+		Issuer:   strings.TrimSpace(status.WebCertIssuer),
+		ExpireAt: status.WebCertExpireAt,
+		CertFile: strings.TrimSpace(status.WebCertFile),
+		KeyFile:  strings.TrimSpace(status.WebKeyFile),
+		Active:   status.HTTPSActive,
+	}}, nil
+}
+
 func (s *CertService) GetStatus() (*entity.CertStatus, error) {
 	settingService := &SettingService{}
 
