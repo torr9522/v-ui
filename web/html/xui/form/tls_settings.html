@@ -44,7 +44,8 @@
         </a-form-item>
         <a-form-item v-if="selectedUsableCertificate()" label="当前证书">
             <span>
-                来源：[[ selectedUsableCertificate().issuer || selectedUsableCertificate().mode ]]
+                [[ selectedUsableCertificate().name ]]
+                ，来源：[[ formatUsableCertificateSource(selectedUsableCertificate()) ]]
                 ，Expires：[[ formatUsableCertificateExpireAt(selectedUsableCertificate().expireAt) ]]
             </span>
         </a-form-item>

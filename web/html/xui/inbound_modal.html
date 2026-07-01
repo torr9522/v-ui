@@ -5,6 +5,7 @@
     {{template "form/inbound"}}
 </a-modal>
 <script>
+    let inModalApp = null;
 
     const inModal = {
         title: '',
@@ -41,22 +42,12 @@
             this.lastAutoAppliedCertFile = '';
             this.lastAutoAppliedKeyFile = '';
             this.confirm = confirm;
+            if (inModalApp) {
+                inModalApp.ensureTlsCertificateModel();
+            }
             this.visible = true;
-            if ((this.inbound.tls || this.inbound.xtls) && this.inbound.stream.tls.certs[0].useFile) {
-                this.loadUsableCertificates(true);
-            }
-        },
-        async loadUsableCertificates(autofill=false) {
-            this.usableCertificatesLoading = true;
-            const msg = await HttpUtil.post('/xui/cert/listUsable');
-            this.usableCertificatesLoading = false;
-            if (!msg.success || !Array.isArray(msg.obj)) {
-                this.usableCertificates = [];
-                return;
-            }
-            this.usableCertificates = msg.obj;
-            if (autofill) {
-                this.autoApplyUsableCertificate();
+            if (inModalApp && (this.inbound.tls || this.inbound.xtls)) {
+                inModalApp.ensureUsableCertificates();
             }
         },
         close() {
@@ -79,7 +70,7 @@
         TUNNEL: Protocols.TUNNEL,
     };
 
-    new Vue({
+    inModalApp = new Vue({
         delimiters: ['[[', ']]'],
         el: '#inbound-modal',
         data: {
@@ -103,11 +94,42 @@
             }
         },
         methods: {
+            ensureTlsCertificateModel() {
+                if (!this.inbound.stream.tls) {
+                    this.$set(this.inbound.stream, 'tls', new TlsStreamSettings());
+                }
+                if (!Array.isArray(this.inbound.stream.tls.certs)) {
+                    this.$set(this.inbound.stream.tls, 'certs', []);
+                }
+                if (!this.inbound.stream.tls.certs[0]) {
+                    this.$set(this.inbound.stream.tls.certs, 0, new TlsStreamSettings.Cert());
+                }
+                const cert = this.inbound.stream.tls.certs[0];
+                if (typeof cert.useFile === 'undefined') {
+                    this.$set(cert, 'useFile', true);
+                }
+                if (typeof cert.certFile === 'undefined') {
+                    this.$set(cert, 'certFile', '');
+                }
+                if (typeof cert.keyFile === 'undefined') {
+                    this.$set(cert, 'keyFile', '');
+                }
+                if (typeof cert.cert === 'undefined') {
+                    this.$set(cert, 'cert', '');
+                }
+                if (typeof cert.key === 'undefined') {
+                    this.$set(cert, 'key', '');
+                }
+                return cert;
+            },
+            currentTlsCertificate() {
+                return this.ensureTlsCertificateModel();
+            },
             usableCertificates() {
                 return Array.isArray(this.inModal.usableCertificates) ? this.inModal.usableCertificates : [];
             },
             selectedUsableCertificate() {
-                const cert = this.inbound.stream.tls.certs[0] || {};
+                const cert = this.currentTlsCertificate();
                 const certFile = String(cert.certFile || '').trim();
                 const keyFile = String(cert.keyFile || '').trim();
                 if (!certFile || !keyFile) {
@@ -119,15 +141,16 @@
                 ) || null;
             },
             shouldShowUsableCertificateSelect() {
+                const cert = this.currentTlsCertificate();
                 return this.usableCertificates().length > 1 &&
-                    this.inbound.stream.tls.certs[0].useFile &&
+                    cert.useFile &&
                     (this.inbound.tls || this.inbound.xtls);
             },
             hasTLSAutoFillNotice() {
                 if (!this.inModal.tlsAutoFillNotice) {
                     return false;
                 }
-                const cert = this.inbound.stream.tls.certs[0] || {};
+                const cert = this.currentTlsCertificate();
                 return String(cert.certFile || '').trim() === this.inModal.lastAutoAppliedCertFile &&
                     String(cert.keyFile || '').trim() === this.inModal.lastAutoAppliedKeyFile;
             },
@@ -135,7 +158,7 @@
                 if (!certificate) {
                     return false;
                 }
-                const cert = this.inbound.stream.tls.certs[0] || {};
+                const cert = this.currentTlsCertificate();
                 const currentCertFile = String(cert.certFile || '').trim();
                 const currentKeyFile = String(cert.keyFile || '').trim();
                 if (currentCertFile === '' && currentKeyFile === '') {
@@ -149,11 +172,12 @@
                     return;
                 }
                 const auto = !!options.auto;
-                this.inbound.stream.tls.certs[0].useFile = true;
-                this.inbound.stream.tls.certs[0].certFile = certificate.certFile;
-                this.inbound.stream.tls.certs[0].keyFile = certificate.keyFile;
+                const cert = this.currentTlsCertificate();
+                this.$set(cert, 'useFile', true);
+                this.$set(cert, 'certFile', certificate.certFile || '');
+                this.$set(cert, 'keyFile', certificate.keyFile || '');
                 if (!String(this.inbound.stream.tls.server || '').trim() && String(certificate.domain || '').trim()) {
-                    this.inbound.stream.tls.server = certificate.domain;
+                    this.$set(this.inbound.stream.tls, 'server', certificate.domain);
                 }
                 if (auto) {
                     this.inModal.lastAutoAppliedCertFile = certificate.certFile;
@@ -161,6 +185,25 @@
                     this.inModal.tlsAutoFillNotice = '已自动使用当前面板证书。';
                 } else {
                     this.inModal.tlsAutoFillNotice = '';
+                }
+            },
+            async loadUsableCertificates(autofill=false) {
+                const cert = this.currentTlsCertificate();
+                if (!cert.useFile || !(this.inbound.tls || this.inbound.xtls)) {
+                    this.inModal.usableCertificates = [];
+                    this.inModal.usableCertificatesLoading = false;
+                    return;
+                }
+                this.inModal.usableCertificatesLoading = true;
+                const msg = await HttpUtil.post('/xui/cert/listUsable');
+                this.inModal.usableCertificatesLoading = false;
+                if (!msg.success || !Array.isArray(msg.obj)) {
+                    this.inModal.usableCertificates = [];
+                    return;
+                }
+                this.inModal.usableCertificates = msg.obj;
+                if (autofill) {
+                    this.autoApplyUsableCertificate();
                 }
             },
             applyUsableCertificateByID(id) {
@@ -187,11 +230,24 @@
                 }
                 return date.toISOString().slice(0, 10);
             },
+            formatUsableCertificateSource(certificate) {
+                if (!certificate) {
+                    return '-';
+                }
+                if (certificate.mode === 'acme_http') {
+                    return "Let's Encrypt";
+                }
+                if (certificate.mode === 'manual') {
+                    return 'Manual';
+                }
+                return certificate.issuer || certificate.mode || '-';
+            },
             async ensureUsableCertificates() {
-                if (!this.inbound.stream.tls.certs[0].useFile) {
+                const cert = this.currentTlsCertificate();
+                if (!cert.useFile || !(this.inbound.tls || this.inbound.xtls)) {
                     return;
                 }
-                await this.inModal.loadUsableCertificates(true);
+                await this.loadUsableCertificates(true);
             },
             streamNetworkChange(oldValue) {
                 if (oldValue === 'kcp') {
@@ -202,11 +258,13 @@
         watch: {
             'inModal.inbound.tls': async function(enabled) {
                 if (enabled) {
+                    this.ensureTlsCertificateModel();
                     await this.ensureUsableCertificates();
                 }
             },
             'inModal.inbound.xtls': async function(enabled) {
                 if (enabled) {
+                    this.ensureTlsCertificateModel();
                     await this.ensureUsableCertificates();
                 }
             },
