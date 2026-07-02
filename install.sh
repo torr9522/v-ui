@@ -686,7 +686,7 @@ install_x-ui() {
     local url
     local local_source_dir=""
     if [[ $# -eq 0 || -z "${1:-}" ]]; then
-        last_version="c-ui-local"
+        last_version="v-ui-local"
     else
         last_version="$1"
     fi
@@ -701,18 +701,18 @@ install_x-ui() {
             error_exit "复制本地源码到 /usr/local/x-ui 失败。"
         fi
     elif [[ $# -eq 0 || -z "${1:-}" ]]; then
-        package_file="/usr/local/c-ui-source-c-ui.tar.gz"
+        package_file="/usr/local/v-ui-source-v-ui.tar.gz"
         url="${XUI_SOURCE_ARCHIVE_URL}"
         echo -e "install source: source archive ${url}"
         mkdir -p /usr/local/x-ui
         if ! download_file "${package_file}" "${url}"; then
-            error_exit "下载 c-ui 源码包失败。"
+            error_exit "下载 v-ui 源码包失败。"
         fi
         if ! tar -tzf "${package_file}" >/dev/null 2>&1; then
-            error_exit "下载的 c-ui 源码包损坏：${package_file}"
+            error_exit "下载的 v-ui 源码包损坏：${package_file}"
         fi
         if ! tar -xzf "${package_file}" -C /usr/local/x-ui --strip-components=1; then
-            error_exit "解压 c-ui 源码包失败。"
+            error_exit "解压 v-ui 源码包失败。"
         fi
         rm -f "${package_file}"
     else
@@ -724,7 +724,7 @@ install_x-ui() {
         package_file="/usr/local/x-ui-linux-${package_arch}.tar.gz"
         echo -e "install source: ${url}"
         if ! download_file "${package_file}" "${url}"; then
-            error_exit "download failed, please check c-ui release assets"
+            error_exit "download failed, please check v-ui release assets"
         fi
         if ! tar -tzf "${package_file}" >/dev/null 2>&1; then
             error_exit "下载的 x-ui 安装包损坏：${package_file}"
@@ -766,7 +766,7 @@ install_x-ui() {
     # ── 安装完成，展示面板信息 ─────────────────────────────────────────────────
     echo -e ""
     echo -e "${green}================================================================${plain}"
-    echo -e "${green}  x-ui v${last_version} 安装完成，面板已启动！${plain}"
+    echo -e "${green}  x-ui ${last_version} 安装完成，面板已启动！${plain}"
     echo -e "${green}================================================================${plain}"
     echo -e ""
     echo -e "  ${yellow}面板登录信息${plain}"

@@ -167,7 +167,7 @@ func (s *ServerService) GetStatus(lastStatus *Status) *Status {
 }
 
 func (s *ServerService) GetXrayVersions() ([]string, error) {
-	return []string{"k-ui-local"}, nil
+	return []string{"v-ui-local"}, nil
 }
 
 func (s *ServerService) downloadXRay(version string) (string, error) {
