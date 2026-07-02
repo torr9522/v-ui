@@ -870,6 +870,21 @@ class Inbound extends XrayCommonClass {
         }
     }
 
+    isPlainShadowsocksShareLink() {
+        return this.protocol === Protocols.SHADOWSOCKS
+            && !this.tls
+            && !this.xtls
+            && this.stream.network === 'tcp'
+            && this.stream.tcp.type === 'none';
+    }
+
+    getShareLinkWarning() {
+        if (this.protocol === Protocols.SHADOWSOCKS && !this.isPlainShadowsocksShareLink()) {
+            return '当前 Shadowsocks 入站启用了 TLS 或自定义传输。标准 ss:// 链接无法完整表达这些参数，请手动记录节点参数，或改用纯 TCP/无 TLS 的 Shadowsocks。';
+        }
+        return '';
+    }
+
     reset() {
         this.port = RandomUtil.randomIntRange(10000, 60000);
         this.listen = '';
@@ -1021,18 +1036,107 @@ class Inbound extends XrayCommonClass {
     }
 
     genSSLink(address='', remark='') {
-        let settings = this.settings;
-        const server = this.stream.tls.server;
-        if (!ObjectUtil.isEmpty(server)) {
-            address = server;
+        if (!this.isPlainShadowsocksShareLink()) {
+            return '';
         }
+        let settings = this.settings;
         return 'ss://' + safeBase64(settings.method + ':' + settings.password + '@' + address + ':' + this.port)
             + '#' + encodeURIComponent(remark);
     }
 
     genTrojanLink(address='', remark='') {
-        let settings = this.settings;
-        return `trojan://${settings.clients[0].password}@${address}:${this.port}#${encodeURIComponent(remark)}`;
+        if (this.protocol !== Protocols.TROJAN) {
+            return '';
+        }
+
+        const settings = this.settings;
+        const params = new Map();
+        const type = this.stream.network || 'tcp';
+        const security = this.xtls ? 'xtls' : (this.stream.security || 'none');
+        params.set('type', type);
+        params.set('security', security);
+
+        switch (type) {
+            case 'tcp': {
+                const tcp = this.stream.tcp;
+                if (tcp.type === 'http') {
+                    params.set('headerType', 'http');
+                    const host = tcp.request.getHeader('Host');
+                    if (!ObjectUtil.isEmpty(host)) {
+                        params.set('host', host);
+                    }
+                    const path = tcp.request.path.join(',');
+                    if (!ObjectUtil.isEmpty(path)) {
+                        params.set('path', path);
+                    }
+                }
+                break;
+            }
+            case 'kcp': {
+                const kcp = this.stream.kcp;
+                params.set('headerType', kcp.type);
+                if (!ObjectUtil.isEmpty(kcp.seed)) {
+                    params.set('seed', kcp.seed);
+                }
+                break;
+            }
+            case 'ws': {
+                const ws = this.stream.ws;
+                if (!ObjectUtil.isEmpty(ws.path)) {
+                    params.set('path', ws.path);
+                }
+                const host = ws.getHeader('Host');
+                if (!ObjectUtil.isEmpty(host)) {
+                    params.set('host', host);
+                }
+                break;
+            }
+            case 'http': {
+                const http = this.stream.http;
+                const path = http.path.join(',');
+                if (!ObjectUtil.isEmpty(path)) {
+                    params.set('path', path);
+                }
+                const host = http.host.join(',');
+                if (!ObjectUtil.isEmpty(host)) {
+                    params.set('host', host);
+                }
+                break;
+            }
+            case 'quic': {
+                const quic = this.stream.quic;
+                params.set('headerType', quic.type);
+                if (!ObjectUtil.isEmpty(quic.security)) {
+                    params.set('quicSecurity', quic.security);
+                }
+                if (!ObjectUtil.isEmpty(quic.key)) {
+                    params.set('key', quic.key);
+                }
+                break;
+            }
+            case 'grpc': {
+                const grpc = this.stream.grpc;
+                if (!ObjectUtil.isEmpty(grpc.serviceName)) {
+                    params.set('serviceName', grpc.serviceName);
+                }
+                break;
+            }
+        }
+
+        if ((this.tls || this.xtls) && !ObjectUtil.isEmpty(this.stream.tls.server)) {
+            address = this.stream.tls.server;
+            params.set('sni', this.stream.tls.server);
+        }
+
+        const url = new URL(`trojan://${address}:${this.port}`);
+        url.username = settings.clients[0].password;
+        for (const [key, value] of params) {
+            if (!ObjectUtil.isEmpty(value)) {
+                url.searchParams.set(key, value);
+            }
+        }
+        url.hash = encodeURIComponent(remark);
+        return url.toString();
     }
 
     genLink(address='', remark='') {

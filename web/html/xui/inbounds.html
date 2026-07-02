@@ -359,7 +359,13 @@
                 });
             },
             showQrcode(dbInbound) {
+                const inbound = dbInbound.toInbound();
+                const warning = inbound.getShareLinkWarning();
                 const link = dbInbound.genLink();
+                if (!ObjectUtil.isEmpty(warning)) {
+                    textModal.show('分享链接说明', warning);
+                    return;
+                }
                 qrModal.show('二维码', link);
             },
             showInfo(dbInbound) {
