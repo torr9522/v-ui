@@ -5,9 +5,28 @@
 
 ## Current Stable
 
-- `v1.0`
+- `v1.0.1-stable`
 - Status: `Ready For Production`
 - Status: `Ready For Node TLS`
+
+## Architecture Freeze
+
+`v1.0.1-stable` 已作为长期开发基线冻结。运行层继续保持 `x-ui` 兼容，不再对 service、安装目录、数据库路径、`/xui` 路由做品牌化重构。
+
+- 架构冻结说明：[docs/ARCHITECTURE_FREEZE.md](./docs/ARCHITECTURE_FREEZE.md)
+- 运行层冻结 ADR：[docs/ADR-001-runtime-freeze.md](./docs/ADR-001-runtime-freeze.md)
+
+## Development Rules
+
+后续开发默认执行：
+
+1. 先审计
+2. 再设计
+3. 最后编码
+
+并且每轮都要求快照、真机验证、UAT、Release 检查。
+
+- 开发规则：[docs/DEVELOPMENT_RULES.md](./docs/DEVELOPMENT_RULES.md)
 
 ## 核心功能
 
@@ -105,6 +124,8 @@ bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install_en.
 
 - [BASELINE.md](./BASELINE.md)
 - [docs/DEVELOPMENT_PLAN.md](./docs/DEVELOPMENT_PLAN.md)
+- [docs/ARCHITECTURE_FREEZE.md](./docs/ARCHITECTURE_FREEZE.md)
+- [docs/DEVELOPMENT_RULES.md](./docs/DEVELOPMENT_RULES.md)
 - [docs/ADR-001-runtime-freeze.md](./docs/ADR-001-runtime-freeze.md)
 - [docs/UPSTREAM_ASSETS.md](./docs/UPSTREAM_ASSETS.md)
 
