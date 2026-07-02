@@ -1,67 +1,68 @@
 # Changelog v1.0
 
-## v1.0 Stable Freeze
+## v1.0 Stable Release
 
-当前稳定版本：
+Current stable version:
 
 - `v-ui v1.0 Stable`
-- Runtime 兼容层：`x-ui`
+- Runtime compatibility layer: `x-ui`
+- Release baseline before tag: `aa27526`
 
-## 开发过程
+## Development Timeline
 
-### 1. 基线导入
+### 1. Baseline Import
 
 - `1daa767` Import v-ui source baseline
 
-建立 `v-ui` 仓库基线，保留 `x-ui` 运行层兼容面。
+Created the `v-ui` repository baseline while keeping the `x-ui` runtime compatibility surface.
 
-### 2. 证书能力起步
+### 2. Certificate Foundation
 
 - `2ce3944` Add certificate management skeleton
 - `e9c7354` Add manual certificate upload and HTTPS toggle
 
-建立域名/证书页、手动证书上传、HTTPS 启用/禁用基础链路。
+Established the certificate page, manual certificate upload flow, and HTTPS enable/disable baseline.
 
-### 3. Runtime 兼容冻结
+### 3. Runtime Compatibility Freeze
 
 - `08955c1` Restore x-ui branding for v-ui runtime
 
-明确保持：
+Runtime compatibility intentionally remains:
 
 - `x-ui.service`
 - `/usr/local/x-ui`
 - `/usr/bin/x-ui`
 - `/xui`
 
-### 4. HTTPS Toggle 修复
+### 4. HTTPS Toggle Fixes
 
 - `0211ea6` Wait for panel listener after HTTPS toggle
 - `67320c0` Fix HTTPS disable readiness detection
 - `364f4e2` Document certificate phase 2 completion
 
-修复 HTTPS 切换等待时机、HTTP ready 误判与前端协议切换问题，完成 Phase 2。
+Fixed listener wait timing, HTTP readiness detection, and protocol switching edge cases.
 
-### 5. ACME HTTP-01 主线
+### 5. ACME HTTP-01 Mainline
 
 - `22304a6` Plan certificate phase 3 ACME HTTP-01
 - `c879fd7` Add ACME HTTP-01 certificate issue
 - `1bc444c` Fix acme.sh executable discovery
 - `35c234f` Use ACME fullchain for panel certificate
 
-完成：
+Completed:
 
-- ACME HTTP-01 骨架
-- `acme.sh` 路径发现
-- Production / Staging 签发
-- Fullchain 落盘与面板 HTTPS 使用
+- ACME HTTP-01 issuance flow
+- `acme.sh` executable discovery
+- production / staging issuance
+- fullchain install for panel HTTPS
 
-### 6. 启动健壮性
+### 6. HTTPS Startup Resilience
 
 - `79e9828` Add HTTPS startup self-heal
 
-当数据库仍保留 HTTPS 设置但证书文件已缺失时，自动回退 HTTP，避免启动失败。
+If HTTPS stays enabled in settings but certificate files are missing, panel startup now falls back to HTTP instead of failing hard.
 
-### 7. 偏航与回归主线
+### 7. Mainline Re-Alignment
 
 - `7d2816c` Add Cloudflare API integration
 - `5be8c63` Add Cloudflare DNS-01 certificate issue
@@ -69,82 +70,148 @@
 - `878ef88` Revert "Add Cloudflare DNS-01 certificate issue"
 - `386e447` Document z-ui and v-ui certificate alignment
 
-短暂探索 Cloudflare / DNS-01 后，明确其偏离 `z-ui` 主线，已完整回滚，主线重新聚焦：
+Cloudflare / DNS-01 exploration was intentionally rolled back to keep the certificate path aligned with the simpler `z-ui` style mainline:
 
-- 手动证书
+- manual certificates
 - HTTPS enable / disable
 - HTTP-01
-- Fullchain
-- Startup Self-Heal
-- Renew Timer
+- fullchain
+- startup self-heal
+- renew timer
 
-### 8. 续期链路
+### 8. Renewal Chain
 
 - `1c95a9b` Add certificate renewal timer
 
-增加：
+Added:
 
 - `x-ui-cert-renew.service`
 - `x-ui-cert-renew.timer`
 - `x-ui cert-renew`
-- 手动证书自动跳过
+- manual certificate auto-skip
 
-### 9. 证书模块冻结
+### 9. Certificate Module Freeze
 
 - `f3a064e` Freeze certificate module
-
-将证书模块收口，唯一保留问题为 `IssueHttp Idempotent`。
-
-### 10. 安装文档修正
-
 - `a42fe78` Document curl prerequisite for installer
 
-补充 raw `curl` 安装入口前提：宿主机必须预装 `curl`。
+Certificate module was frozen with only one remaining issue:
 
-## v1.0 最终能力
+- `IssueHttp Idempotent`
 
-- 入站管理
-- 出站管理
-- Routing
-- AI Routing Template
-- Managed Routing
-- HTTPS Panel
-- 手动证书
-- HTTP-01
-- ACME Production / Staging
-- Fullchain
-- Startup Self-Heal
-- Renew Timer
+Installer documentation was corrected to require `curl` before raw one-line installation.
 
-## 真机与 UAT 结果
+### 10. Inbound TLS Certificate Reuse
 
-- `5.226.49.140`：`PASS`
-- `43.198.88.130`：`PASS`
-- `139.180.135.210`：`PASS`
+- `d4d0f3d` Audit inbound TLS certificate selection
+- `bb08ee9` Add inbound TLS certificate selection
+- `27daefd` Fix inbound TLS certificate autofill
+- `2039dae` Fix TLS certificate autofill context
+- `8021dcb` Document certificate auto selection validation
 
-真人 UAT：
+Completed:
 
-- 安装：`PASS`
-- 登录：`PASS`
-- 申请证书：`PASS`
-- 新增 TLS 节点：`PASS`
-- 客户端连接：`PASS`
-- 修改：`PASS`
-- 删除：`PASS`
+- `POST /xui/cert/listUsable`
+- inbound TLS auto-fill of `certFile` / `keyFile`
+- panel certificate summary in inbound TLS form
+- live validation on `139.180.135.210`
 
-## 已知问题
+### 11. Xray 26.5.3 and Modern UI Audit
+
+- `8b53931` Audit Xray 26.5.3 protocol parameters
+- `914b864` Audit inbound and routing UI modernization
+
+Completed static audits for:
+
+- protocol parameter compatibility against `Xray-core 26.5.3`
+- inbound UX modernization gaps
+- routing UX modernization gaps
+
+### 12. Modern UI Phase 1
+
+- `d200938` Improve inbound and routing UI layout
+- `15a9fa6` Restore Trojan protocol option
+- `62b60eb` Restore Trojan TLS tabs
+
+Completed:
+
+- inbound modal tab layout
+- routing card view
+- routing grouped form layout
+- transport naming improvement such as `RAW`
+- Trojan option and Trojan TLS tab regression fix
+
+### 13. Inbound Compatibility and Share Link Fixes
+
+- `f2bbd8b` Audit inbound protocol compatibility
+- `1ace742` Fix Trojan and Shadowsocks share links
+
+Completed:
+
+- Trojan share link transport / TLS parameter completion
+- safer Shadowsocks share link behavior for non-plain transports
+- share link smoke test coverage
+
+### 14. Repository Finalization
+
+- `aa27526` Point install and runtime links to v-ui repo
+
+Completed:
+
+- installer links updated to `torr9522/v-ui`
+- runtime links updated to `torr9522/v-ui`
+- remote clone validation against the independent repository
+
+## Final Capability Matrix
+
+- inbound management
+- outbound management
+- routing
+- AI routing template
+- managed routing
+- HTTPS panel
+- manual certificates
+- ACME HTTP-01
+- ACME production / staging
+- fullchain
+- startup self-heal
+- renew timer / renew service
+- inbound TLS certificate auto selection
+- Modern UI Phase 1
+- Trojan / Shadowsocks share link fixes
+
+## Live Validation and UAT
+
+Live server validation:
+
+- `5.226.49.140`: `PASS`
+- `43.198.88.130`: `PASS`
+- `139.180.135.210`: `PASS`
+
+User-acceptance validation summary:
+
+- install: `PASS`
+- login: `PASS`
+- certificate issue: `PASS`
+- TLS inbound creation: `PASS`
+- client connectivity: `PASS`
+- inbound update: `PASS`
+- inbound delete: `PASS`
+- renew service path: `PASS`
+
+## Known Issue
 
 - `Issue001` `IssueHttp Idempotent` `P2`
 
-## 稳定版结论
+## Stable Conclusion
 
-`v-ui v1.0` 正式冻结。
+`v-ui v1.0` is ready as the stable baseline.
 
-后续进入维护模式：
+Post-release policy:
 
-- 允许 Bug Fix
-- 允许 Security Fix
-- 允许 Compatibility Fix
-- 不再接受证书系统扩展
+- Bug Fix only
+- Security Fix only
+- Compatibility Fix only
+- no certificate system expansion
 
-下一阶段应回到 `v-ui` 主功能开发。
+Next development should return to core `v-ui` product features.
