@@ -1,11 +1,11 @@
 {{define "form/trojan"}}
-<a-form layout="inline">
+<a-form layout="vertical">
     <a-form-item label="密码">
-        <a-input v-model.trim="inbound.settings.clients[0].password"></a-input>
+        <a-input v-model.trim="inbound.settings.clients[0].password" placeholder="Trojan password"></a-input>
     </a-form-item>
 </a-form>
 
-<a-form layout="inline">
+<a-form layout="vertical">
     <a-form-item label="fallbacks">
         <a-row>
             <a-button type="primary" size="small"
@@ -17,7 +17,7 @@
 </a-form>
 
 <!-- trojan fallbacks -->
-<a-form v-for="(fallback, index) in inbound.settings.fallbacks" layout="inline">
+<a-form v-for="(fallback, index) in inbound.settings.fallbacks" layout="vertical">
     <a-divider>
         fallback[[ index + 1 ]]
         <a-icon type="delete" @click="() => inbound.settings.delTrojanFallback(index)"

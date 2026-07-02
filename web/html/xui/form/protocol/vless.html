@@ -1,7 +1,7 @@
 {{define "form/vless"}}
-<a-form layout="inline">
+<a-form layout="vertical">
     <a-form-item label="id">
-        <a-input v-model.trim="inbound.settings.vlesses[0].id"></a-input>
+        <a-input v-model.trim="inbound.settings.vlesses[0].id" placeholder="客户端 UUID"></a-input>
     </a-form-item>
     <a-form-item v-if="inbound.xtls" label="flow">
         <a-select v-model="inbound.settings.vlesses[0].flow" style="width: 150px">
@@ -11,7 +11,7 @@
     </a-form-item>
 </a-form>
 
-<a-form layout="inline">
+<a-form layout="vertical">
     <a-form-item label="fallbacks">
         <a-row>
             <a-button type="primary" size="small"
@@ -23,7 +23,7 @@
 </a-form>
 
 <!-- vless fallbacks -->
-<a-form v-for="(fallback, index) in inbound.settings.fallbacks" layout="inline">
+<a-form v-for="(fallback, index) in inbound.settings.fallbacks" layout="vertical">
     <a-divider>
         fallback[[ index + 1 ]]
         <a-icon type="delete" @click="() => inbound.settings.delFallback(index)"

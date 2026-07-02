@@ -1,7 +1,7 @@
 {{define "inboundModal"}}
 <a-modal id="inbound-modal" v-model="inModal.visible" :title="inModal.title" @ok="inModal.ok"
          :confirm-loading="inModal.confirmLoading" :closable="true" :mask-closable="false"
-         :ok-text="inModal.okText" cancel-text='{{ i18n "close" }}'>
+         :ok-text="inModal.okText" cancel-text='{{ i18n "close" }}' width="1080px">
     {{template "form/inbound"}}
 </a-modal>
 <script>
@@ -12,6 +12,7 @@
         visible: false,
         confirmLoading: false,
         okText: '确定',
+        activeTab: 'basic',
         confirm: null,
         usableCertificates: [],
         usableCertificatesLoading: false,
@@ -26,6 +27,7 @@
         show({ title='', okText='确定', inbound=null, dbInbound=null, confirm=(inbound, dbInbound)=>{} }) {
             this.title = title;
             this.okText = okText;
+            this.activeTab = 'basic';
             if (inbound) {
                 this.inbound = Inbound.fromJson(inbound.toJson());
             } else {
@@ -44,6 +46,7 @@
             this.confirm = confirm;
             if (inModalApp) {
                 inModalApp.ensureTlsCertificateModel();
+                inModalApp.ensureSniffingModel();
             }
             this.visible = true;
             if (inModalApp && (this.inbound.tls || this.inbound.xtls)) {
@@ -122,8 +125,62 @@
                 }
                 return cert;
             },
+            ensureSniffingModel() {
+                if (!this.inbound.sniffing) {
+                    this.$set(this.inbound, 'sniffing', new Sniffing());
+                }
+                if (!Array.isArray(this.inbound.sniffing.destOverride)) {
+                    this.$set(this.inbound.sniffing, 'destOverride', ['http', 'tls']);
+                }
+                if (typeof this.inbound.sniffing.enabled === 'undefined') {
+                    this.$set(this.inbound.sniffing, 'enabled', false);
+                }
+                if (typeof this.inbound.sniffing.metadataOnly === 'undefined') {
+                    this.$set(this.inbound.sniffing, 'metadataOnly', false);
+                }
+                if (typeof this.inbound.sniffing.routeOnly === 'undefined') {
+                    this.$set(this.inbound.sniffing, 'routeOnly', false);
+                }
+                return this.inbound.sniffing;
+            },
             currentTlsCertificate() {
                 return this.ensureTlsCertificateModel();
+            },
+            transportDisplayName(network) {
+                switch (network) {
+                    case 'tcp':
+                        return 'RAW';
+                    case 'http':
+                        return 'HTTP (Legacy)';
+                    case 'kcp':
+                        return 'mKCP (Legacy)';
+                    case 'quic':
+                        return 'QUIC (Legacy)';
+                    case 'ws':
+                        return 'WebSocket';
+                    case 'grpc':
+                        return 'gRPC';
+                    default:
+                        return network || 'None';
+                }
+            },
+            securityDisplayName() {
+                if (this.inbound.xtls) {
+                    return 'XTLS (Deprecated)';
+                }
+                if (this.inbound.tls) {
+                    return 'TLS';
+                }
+                return 'None';
+            },
+            inboundSummary() {
+                const protocol = String(this.inbound.protocol || '').toUpperCase() || 'INBOUND';
+                const parts = [protocol];
+                if (this.inbound.canEnableStream && this.inbound.canEnableStream()) {
+                    parts.push(this.transportDisplayName(this.inbound.stream.network));
+                }
+                parts.push(this.securityDisplayName());
+                return parts.join(' + ');
             },
             usableCertificates() {
                 return Array.isArray(this.inModal.usableCertificates) ? this.inModal.usableCertificates : [];
@@ -273,6 +330,11 @@
             'inModal.inbound.stream.tls.certs[0].useFile': async function(useFile) {
                 if (useFile && (this.inbound.tls || this.inbound.xtls)) {
                     await this.ensureUsableCertificates();
+                }
+            },
+            'inModal.visible': function(visible) {
+                if (visible) {
+                    this.ensureSniffingModel();
                 }
             }
         }

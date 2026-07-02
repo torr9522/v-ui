@@ -1,20 +1,25 @@
 {{define "form/tlsSettings"}}
-<!-- tls enable -->
-<a-form layout="inline" v-if="inbound.canSetTls()">
-    <a-form-item label="tls">
+<a-form layout="vertical" v-if="inbound.canSetTls()">
+    <a-form-item label="Security">
         <a-switch v-model="inbound.tls">
         </a-switch>
     </a-form-item>
-    <a-form-item v-if="inbound.canEnableXTls()" label="xtls">
+    <a-form-item v-if="inbound.canEnableXTls()" label="XTLS (Deprecated)">
         <a-switch v-model="inbound.xtls"></a-switch>
     </a-form-item>
 </a-form>
 
-<!-- tls settings -->
 <a-form v-if="inbound.tls || inbound.xtls"
-        layout="inline">
-    <a-form-item label="域名">
-        <a-input v-model.trim="inbound.stream.tls.server"></a-input>
+        layout="vertical">
+    <a-alert
+            type="info"
+            show-icon
+            style="margin-bottom: 16px;"
+            message="TLS 可复用当前面板证书"
+            description="如果已安装 Manual 或 ACME 面板证书，这里会优先提供自动填充或下拉选择。">
+    </a-alert>
+    <a-form-item label="SNI / 域名">
+        <a-input v-model.trim="inbound.stream.tls.server" placeholder="例如：panel.example.com"></a-input>
     </a-form-item>
     <a-form-item v-if="shouldShowUsableCertificateSelect()" label="本地证书">
         <a-select :value="selectedUsableCertificate() ? selectedUsableCertificate().id : undefined"
@@ -25,7 +30,7 @@
             </a-select-option>
         </a-select>
     </a-form-item>
-    <a-form-item label="证书">
+    <a-form-item label="证书来源">
         <a-radio-group v-model="inbound.stream.tls.certs[0].useFile"
                        button-style="solid">
             <a-radio-button :value="true">certificate file path</a-radio-button>
@@ -50,10 +55,10 @@
             </span>
         </a-form-item>
         <a-form-item label="公钥文件路径">
-            <a-input v-model.trim="inbound.stream.tls.certs[0].certFile"></a-input>
+            <a-input v-model.trim="inbound.stream.tls.certs[0].certFile" placeholder="/usr/local/x-ui/cert/acme-panel.crt"></a-input>
         </a-form-item>
         <a-form-item label="密钥文件路径">
-            <a-input v-model.trim="inbound.stream.tls.certs[0].keyFile"></a-input>
+            <a-input v-model.trim="inbound.stream.tls.certs[0].keyFile" placeholder="/usr/local/x-ui/cert/acme-panel.key"></a-input>
         </a-form-item>
     </template>
     <template v-else>
@@ -66,5 +71,10 @@
                      v-model="inbound.stream.tls.certs[0].key"></a-input>
         </a-form-item>
     </template>
+    <a-alert v-if="inbound.xtls"
+            type="warning"
+            show-icon
+            message="XTLS 入口仅保留兼容编辑能力。">
+    </a-alert>
 </a-form>
 {{end}}

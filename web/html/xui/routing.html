@@ -36,6 +36,86 @@
         font-size: 12px;
         margin-top: 4px;
     }
+
+    .view-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 12px;
+    }
+
+    .rule-card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+    }
+
+    .rule-card {
+        border: 1px solid #f0f0f0;
+        border-radius: 12px;
+        padding: 16px;
+        background: #fff;
+        box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+    }
+
+    .rule-card.rule-disabled {
+        opacity: 0.78;
+    }
+
+    .rule-card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+    }
+
+    .rule-card-title {
+        font-weight: 600;
+        line-height: 1.4;
+    }
+
+    .rule-card-subtitle {
+        color: rgba(0, 0, 0, 0.45);
+        font-size: 12px;
+        margin-top: 4px;
+    }
+
+    .rule-card-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .rule-chip-wrap {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .rule-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #f5f7fa;
+        color: rgba(0, 0, 0, 0.85);
+        font-size: 12px;
+    }
+
+    .rule-chip-label {
+        color: rgba(0, 0, 0, 0.45);
+    }
+
+    .rule-card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 16px;
+    }
 </style>
 <body>
 <a-layout id="app" v-cloak>
@@ -67,8 +147,59 @@
                             <a-button type="primary" icon="plus" @click="openAddRule">新增</a-button>
                             <a-button style="margin-left: 8px;" icon="deployment-unit" @click="openAITemplateModal">AI 分流模板</a-button>
                             <a-button style="margin-left: 8px;" icon="reload" @click="refreshAll">刷新</a-button>
+                            <span class="view-toggle">
+                                <span>视图</span>
+                                <a-radio-group v-model="viewMode" size="small">
+                                    <a-radio-button value="cards">Cards</a-radio-button>
+                                    <a-radio-button value="table">Table</a-radio-button>
+                                </a-radio-group>
+                            </span>
                         </div>
-                        <a-table :columns="columns"
+                        <div v-if="viewMode === 'cards'" class="rule-card-grid">
+                            <a-empty v-if="rules.length === 0" description="暂无路由规则"></a-empty>
+                            <div v-for="(rule, index) in rules"
+                                 v-else
+                                 :key="`card-${rule.id}`"
+                                 class="rule-card"
+                                 :class="{ 'rule-disabled': !rule.enabled }">
+                                <div class="rule-card-head">
+                                    <div>
+                                        <div class="rule-card-title">
+                                            [[ ruleSourceSummary(rule) ]] -> [[ ruleTargetSummary(rule) ]]
+                                        </div>
+                                        <div class="rule-card-subtitle">
+                                            [[ rule.remark || (rule.isSystem ? 'System Rule' : 'Routing Rule') ]]
+                                        </div>
+                                    </div>
+                                    <a-switch :checked="rule.enabled"
+                                              :disabled="isToggleDisabled(rule)"
+                                              @change="checked => toggleRule(rule, checked)"></a-switch>
+                                </div>
+                                <div class="rule-card-meta">
+                                    <a-tag color="geekblue">[[ rule.type || 'field' ]]</a-tag>
+                                    <a-tag color="green">sort:[[ rule.sort ]]</a-tag>
+                                    <a-tag v-if="rule.outboundTag" color="blue">[[ rule.outboundTag ]]</a-tag>
+                                    <a-tag v-if="rule.isSystem" color="purple">System</a-tag>
+                                </div>
+                                <div class="rule-chip-wrap">
+                                    <span v-for="chip in ruleChips(rule)" :key="`${rule.id}-${chip.label}-${chip.value}`" class="rule-chip">
+                                        <span class="rule-chip-label">[[ chip.label ]]</span>
+                                        <span>[[ chip.value ]]</span>
+                                    </span>
+                                </div>
+                                <div class="rule-card-actions">
+                                    <a @click="openEditRule(rule)">编辑</a>
+                                    <a @click="moveRule(index, -1)">上移</a>
+                                    <a @click="moveRule(index, 1)">下移</a>
+                                    <a v-if="canDeleteRule(rule)"
+                                       @click="deleteRule(rule)"
+                                       style="color: #ff4d4f;">删除</a>
+                                    <a-tag v-else color="default">受保护</a-tag>
+                                </div>
+                            </div>
+                        </div>
+                        <a-table v-else
+                                 :columns="columns"
                                  :row-key="rule => rule.id"
                                  :data-source="rules"
                                  :loading="spinning"
@@ -149,67 +280,99 @@
              width="960px"
              @ok="submitRule">
         <a-form layout="vertical">
-            <a-row :gutter="16">
-                <a-col :xs="24" :sm="8">
-                    <a-form-item label="Type" required>
-                        <a-select v-model="editor.form.type" :disabled="isSystemEditing">
-                            <a-select-option value="field">field</a-select-option>
-                        </a-select>
+            <a-tabs :active-key="editor.activeTab" @change="key => editor.activeTab = key">
+                <a-tab-pane key="source" tab="Source Conditions">
+                    <a-alert
+                            type="info"
+                            show-icon
+                            style="margin-bottom: 16px;"
+                            message="Source Conditions"
+                            description="每行一个，保存时会转为 JSON array。这里优先描述流量从哪里来。">
+                    </a-alert>
+                    <a-form-item label="InboundTag">
+                        <a-textarea v-model="editor.form.inboundTag" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                        <div class="routing-form-hint">每行一个 inboundTag，例如 `inbound-443`。</div>
                     </a-form-item>
-                </a-col>
-                <a-col :xs="24" :sm="8">
+                    <a-form-item label="Source">
+                        <a-textarea v-model="editor.form.source" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                        <div class="routing-form-hint">每行一个源地址或 CIDR。</div>
+                    </a-form-item>
+                    <a-form-item label="Port">
+                        <a-input v-model.trim="editor.form.port" :disabled="isSystemEditing" placeholder="例如：80,443,10000-20000"></a-input>
+                    </a-form-item>
+                </a-tab-pane>
+
+                <a-tab-pane key="match" tab="Match Conditions">
+                    <a-alert
+                            type="info"
+                            show-icon
+                            style="margin-bottom: 16px;"
+                            message="Match Conditions"
+                            description="每行一个，保存时会转为 JSON array。这里描述要匹配什么流量。">
+                    </a-alert>
+                    <a-form-item label="Domain">
+                        <a-textarea v-model="editor.form.domain" :disabled="isSystemEditing" :auto-size="{ minRows: 4, maxRows: 8 }"></a-textarea>
+                        <div class="routing-form-hint">例如 `domain:openai.com`、`geosite:google`，每行一个。</div>
+                    </a-form-item>
+                    <a-form-item label="IP">
+                        <a-textarea v-model="editor.form.ip" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                        <div class="routing-form-hint">例如 `1.1.1.1/32`、`geoip:cn`，每行一个。</div>
+                    </a-form-item>
+                    <a-row :gutter="16">
+                        <a-col :xs="24" :sm="12">
+                            <a-form-item label="Protocol">
+                                <a-textarea v-model="editor.form.protocol" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
+                                <div class="routing-form-hint">例如 `http`、`tls`，每行一个。</div>
+                            </a-form-item>
+                        </a-col>
+                        <a-col :xs="24" :sm="12">
+                            <a-form-item label="Network">
+                                <a-input v-model.trim="editor.form.network" :disabled="isSystemEditing" placeholder="例如：tcp、udp"></a-input>
+                            </a-form-item>
+                        </a-col>
+                    </a-row>
+                </a-tab-pane>
+
+                <a-tab-pane key="action" tab="Action">
+                    <a-alert
+                            type="info"
+                            show-icon
+                            style="margin-bottom: 16px;"
+                            message="Action"
+                            description="先明确这条规则的目标 outbound，再补其余条件。">
+                    </a-alert>
                     <a-form-item label="OutboundTag" required>
                         <a-select v-model="editor.form.outboundTag" :disabled="isSystemEditing" show-search option-filter-prop="children">
                             <a-select-option v-for="outbound in outboundOptions" :key="outbound.tag" :value="outbound.tag">[[ outbound.tag ]]</a-select-option>
                         </a-select>
                     </a-form-item>
-                </a-col>
-                <a-col :xs="24" :sm="4">
-                    <a-form-item label="启用">
-                        <a-switch v-model="editor.form.enabled" :disabled="isSystemEditing"></a-switch>
+                </a-tab-pane>
+
+                <a-tab-pane key="advanced" tab="Advanced">
+                    <a-row :gutter="16">
+                        <a-col :xs="24" :sm="8">
+                            <a-form-item label="Type" required>
+                                <a-select v-model="editor.form.type" :disabled="isSystemEditing">
+                                    <a-select-option value="field">field</a-select-option>
+                                </a-select>
+                            </a-form-item>
+                        </a-col>
+                        <a-col :xs="24" :sm="8">
+                            <a-form-item label="启用">
+                                <a-switch v-model="editor.form.enabled" :disabled="isSystemEditing"></a-switch>
+                            </a-form-item>
+                        </a-col>
+                        <a-col :xs="24" :sm="8">
+                            <a-form-item label="排序">
+                                <a-input-number v-model="editor.form.sort" style="width: 100%;" :min="0"></a-input-number>
+                            </a-form-item>
+                        </a-col>
+                    </a-row>
+                    <a-form-item label="备注">
+                        <a-input v-model.trim="editor.form.remark" :max-length="255"></a-input>
                     </a-form-item>
-                </a-col>
-                <a-col :xs="24" :sm="4">
-                    <a-form-item label="排序">
-                        <a-input-number v-model="editor.form.sort" style="width: 100%;" :min="0"></a-input-number>
-                    </a-form-item>
-                </a-col>
-            </a-row>
-            <a-form-item label="备注">
-                <a-input v-model.trim="editor.form.remark" :max-length="255"></a-input>
-            </a-form-item>
-            <a-form-item label="Domain">
-                <a-textarea v-model="editor.form.domain" :disabled="isSystemEditing" :auto-size="{ minRows: 4, maxRows: 8 }"></a-textarea>
-                <div class="routing-form-hint">支持 JSON array 或每行一个值，例如 `domain:openai.com`。</div>
-            </a-form-item>
-            <a-form-item label="IP">
-                <a-textarea v-model="editor.form.ip" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
-                <div class="routing-form-hint">支持 JSON array 或每行一个值。</div>
-            </a-form-item>
-            <a-row :gutter="16">
-                <a-col :xs="24" :sm="12">
-                    <a-form-item label="Port">
-                        <a-input v-model.trim="editor.form.port" :disabled="isSystemEditing"></a-input>
-                    </a-form-item>
-                </a-col>
-                <a-col :xs="24" :sm="12">
-                    <a-form-item label="Network">
-                        <a-input v-model.trim="editor.form.network" :disabled="isSystemEditing"></a-input>
-                    </a-form-item>
-                </a-col>
-            </a-row>
-            <a-form-item label="Protocol">
-                <a-textarea v-model="editor.form.protocol" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
-                <div class="routing-form-hint">支持 JSON array 或每行一个值，例如 `http`、`tls`。</div>
-            </a-form-item>
-            <a-form-item label="Source">
-                <a-textarea v-model="editor.form.source" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
-                <div class="routing-form-hint">支持 JSON array 或每行一个值。</div>
-            </a-form-item>
-            <a-form-item label="InboundTag">
-                <a-textarea v-model="editor.form.inboundTag" :disabled="isSystemEditing" :auto-size="{ minRows: 3, maxRows: 6 }"></a-textarea>
-                <div class="routing-form-hint">支持 JSON array 或每行一个值。</div>
-            </a-form-item>
+                </a-tab-pane>
+            </a-tabs>
         </a-form>
     </a-modal>
 
@@ -363,6 +526,7 @@
         data: {
             siderDrawer,
             spinning: false,
+            viewMode: 'cards',
             rules: [],
             outboundOptions: [],
             columns: columns,
@@ -372,6 +536,7 @@
                 okText: '保存',
                 confirmLoading: false,
                 mode: 'add',
+                activeTab: 'source',
                 form: createRuleForm(),
             },
             fieldModal: {
@@ -443,6 +608,55 @@
                     return '';
                 }
                 return String(value);
+            },
+            fieldItems(value) {
+                const text = this.normalizeField(value).trim();
+                if (text === '') {
+                    return [];
+                }
+                try {
+                    const parsed = JSON.parse(text);
+                    if (Array.isArray(parsed)) {
+                        return parsed.map(item => String(item).trim()).filter(Boolean);
+                    }
+                } catch (e) {
+                }
+                return text.split(/[\n,]+/).map(item => item.trim()).filter(Boolean);
+            },
+            ruleSourceSummary(rule) {
+                const inboundTags = this.fieldItems(rule.inboundTag);
+                if (inboundTags.length > 0) {
+                    return inboundTags[0] + (inboundTags.length > 1 ? ` +${inboundTags.length - 1}` : '');
+                }
+                const sources = this.fieldItems(rule.source);
+                if (sources.length > 0) {
+                    return sources[0] + (sources.length > 1 ? ` +${sources.length - 1}` : '');
+                }
+                return 'Any Source';
+            },
+            ruleTargetSummary(rule) {
+                return rule.outboundTag || 'No Outbound';
+            },
+            ruleChips(rule) {
+                const chips = [];
+                const pushItems = (label, value, max=2) => {
+                    const items = this.fieldItems(value);
+                    if (items.length === 0) {
+                        return;
+                    }
+                    const preview = items.slice(0, max).join(', ');
+                    chips.push({
+                        label: label,
+                        value: items.length > max ? `${preview} +${items.length - max}` : preview,
+                    });
+                };
+                pushItems('domain', rule.domain);
+                pushItems('ip', rule.ip);
+                pushItems('protocol', rule.protocol);
+                pushItems('network', rule.network, 1);
+                pushItems('port', rule.port, 1);
+                pushItems('source', rule.source);
+                return chips;
             },
             formatMillis(value) {
                 if (!value) {
@@ -567,6 +781,7 @@
             openAddRule() {
                 this.editor.form = createRuleForm();
                 this.editor.mode = 'add';
+                this.editor.activeTab = 'source';
                 this.editor.title = '新增路由规则';
                 this.editor.okText = '新增';
                 this.editor.confirmLoading = false;
@@ -590,6 +805,7 @@
                     isSystem: !!rule.isSystem,
                 };
                 this.editor.mode = 'edit';
+                this.editor.activeTab = 'source';
                 this.editor.title = rule.isSystem ? `编辑系统规则 #${rule.id}` : `编辑路由规则 #${rule.id}`;
                 this.editor.okText = '保存';
                 this.editor.confirmLoading = false;

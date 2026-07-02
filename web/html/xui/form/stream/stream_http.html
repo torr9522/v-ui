@@ -1,7 +1,14 @@
 {{define "form/streamHTTP"}}
-<a-form layout="inline">
+<a-alert
+        type="warning"
+        show-icon
+        style="margin-bottom: 12px;"
+        message="旧 HTTP transport（Legacy）"
+        description="保留兼容编辑，不建议作为后续主线 transport 继续扩展。">
+</a-alert>
+<a-form layout="vertical">
     <a-form-item label="路径">
-        <a-input v-model.trim="inbound.stream.http.path"></a-input>
+        <a-input v-model.trim="inbound.stream.http.path" placeholder="/"></a-input>
     </a-form-item>
     <a-form-item label="host">
         <a-row v-for="(host, index) in inbound.stream.http.host">

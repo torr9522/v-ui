@@ -1,7 +1,7 @@
 {{define "form/streamWS"}}
-<a-form layout="inline">
+<a-form layout="vertical">
     <a-form-item label="路径">
-        <a-input v-model.trim="inbound.stream.ws.path"></a-input>
+        <a-input v-model.trim="inbound.stream.ws.path" placeholder="/ws"></a-input>
     </a-form-item>
     <a-form-item label="请求头">
         <a-row>
