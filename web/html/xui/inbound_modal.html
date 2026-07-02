@@ -181,7 +181,7 @@
             inboundSummary() {
                 const protocol = String(this.inbound.protocol || '').toUpperCase() || 'INBOUND';
                 const parts = [protocol];
-                if (this.inbound.canEnableStream && this.inbound.canEnableStream()) {
+                if ((this.inbound.canEnableStream && this.inbound.canEnableStream()) || this.inbound.protocol === Protocols.TROJAN) {
                     parts.push(this.transportDisplayName(this.inbound.stream.network));
                 }
                 parts.push(this.securityDisplayName());

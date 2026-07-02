@@ -106,7 +106,7 @@
         </a-form>
     </a-tab-pane>
 
-    <a-tab-pane key="transport" tab="Transport" v-if="inbound.canEnableStream()">
+    <a-tab-pane key="transport" tab="Transport" v-if="inbound.canEnableStream() || inbound.protocol === Protocols.TROJAN">
         <a-form layout="vertical">
             <a-alert
                     type="info"
@@ -119,7 +119,7 @@
         </a-form>
     </a-tab-pane>
 
-    <a-tab-pane key="security" tab="Security" v-if="inbound.canEnableTls()">
+    <a-tab-pane key="security" tab="Security" v-if="inbound.canEnableTls() || inbound.protocol === Protocols.TROJAN">
         <a-form layout="vertical">
             <a-alert
                     type="info"
