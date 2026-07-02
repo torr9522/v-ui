@@ -7,9 +7,9 @@ plain='\033[0m'
 
 cur_dir=$(pwd)
 INSTALL_SCRIPT_DIR=""
-XUI_RAW_BASE="${XUI_RAW_BASE:-https://raw.githubusercontent.com/torr9522/c-ui/c-ui}"
-XUI_RELEASES_BASE="${XUI_RELEASES_BASE:-${XUI_RELEASES_RAW_BASE:-https://github.com/torr9522/c-ui/releases/download/c-ui-assets}}"
-XUI_SOURCE_ARCHIVE_URL="${XUI_SOURCE_ARCHIVE_URL:-https://github.com/torr9522/c-ui/archive/refs/heads/c-ui.tar.gz}"
+XUI_RAW_BASE="${XUI_RAW_BASE:-https://raw.githubusercontent.com/torr9522/v-ui/v-ui}"
+XUI_RELEASES_BASE="${XUI_RELEASES_BASE:-${XUI_RELEASES_RAW_BASE:-https://github.com/torr9522/v-ui/releases/download/v-ui-assets}}"
+XUI_SOURCE_ARCHIVE_URL="${XUI_SOURCE_ARCHIVE_URL:-https://github.com/torr9522/v-ui/archive/refs/heads/v-ui.tar.gz}"
 
 resolve_install_script_dir() {
     local script_source="${BASH_SOURCE[0]:-$0}"

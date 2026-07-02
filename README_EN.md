@@ -111,4 +111,4 @@ Detailed records:
 
 ## Stargazers
 
-[![Stargazers over time](https://starchart.cc/torr9522/c-ui.svg)](https://starchart.cc/torr9522/c-ui)
+[![Stargazers over time](https://starchart.cc/torr9522/v-ui.svg)](https://starchart.cc/torr9522/v-ui)

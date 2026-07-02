@@ -199,7 +199,7 @@ func (s *ServerService) downloadXRay(version string) (string, error) {
 
 	baseURL := strings.TrimRight(os.Getenv("XUI_RELEASES_BASE"), "/")
 	if baseURL == "" {
-		baseURL = "https://github.com/torr9522/c-ui/releases/download/c-ui-assets"
+		baseURL = "https://github.com/torr9522/v-ui/releases/download/v-ui-assets"
 	}
 	url := fmt.Sprintf("%s/%s", baseURL, zipName)
 	resp, err := http.Get(url)
