@@ -2,7 +2,14 @@
 
 ## Overview
 
-`C-UI` 维持 `x-ui` Runtime 兼容层，同时在数据库、服务层、控制器层和前端页面上增加 Outbound、Routing、AI Template 与托管配置能力。
+`v-ui` 维持 `x-ui` Runtime 兼容层，同时在数据库、服务层、控制器层和前端页面上增加 Outbound、Routing、AI Template 与托管配置能力。
+
+运行层兼容范围保持不变：
+
+- service 仍为 `x-ui.service`
+- 安装目录仍为 `/usr/local/x-ui`
+- 配置与数据库路径仍为 `/etc/x-ui`
+- Web 路由前缀仍为 `/xui`
 
 ## Database
 
@@ -169,7 +176,7 @@ bootstrap 能力：
 资产策略：
 
 - 优先使用仓库内 `bin/` 资产
-- raw 安装时从 `torr9522/c-ui` 拉取源码归档
+- raw 安装时从 `torr9522/v-ui` 拉取源码归档
 
 ## Request Flow
 
@@ -184,4 +191,4 @@ bootstrap 能力：
 
 ## Baseline
 
-`v0.1.0-stable` 是当前后续所有开发的稳定基线。
+`v1.0.1-stable` 是当前后续所有开发的稳定基线。
