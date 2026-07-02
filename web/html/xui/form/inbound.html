@@ -24,7 +24,7 @@
                 <a-col :xs="24" :sm="6">
                     <a-form-item label='{{ i18n "protocol" }}'>
                         <a-select v-model="inbound.protocol">
-                            <a-select-option v-for="p in protocolOptions" :key="p" :value="p">[[ p ]]</a-select-option>
+                            <a-select-option v-for="p in protocolOptions" :key="p.value" :value="p.value">[[ p.label ]]</a-select-option>
                         </a-select>
                     </a-form-item>
                 </a-col>

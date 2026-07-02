@@ -65,6 +65,7 @@
     const protocols = {
         VMESS: Protocols.VMESS,
         VLESS: Protocols.VLESS,
+        TROJAN: Protocols.TROJAN,
         SHADOWSOCKS: Protocols.SHADOWSOCKS,
         DOKODEMO: Protocols.DOKODEMO,
         SOCKS: Protocols.SOCKS,
@@ -72,6 +73,18 @@
         MIXED: Protocols.MIXED,
         TUNNEL: Protocols.TUNNEL,
     };
+
+    const protocolOptions = [
+        { value: Protocols.VMESS, label: 'VMess' },
+        { value: Protocols.VLESS, label: 'VLESS' },
+        { value: Protocols.TROJAN, label: 'Trojan' },
+        { value: Protocols.SHADOWSOCKS, label: 'Shadowsocks' },
+        { value: Protocols.DOKODEMO, label: 'Dokodemo-door' },
+        { value: Protocols.SOCKS, label: 'SOCKS' },
+        { value: Protocols.HTTP, label: 'HTTP' },
+        { value: Protocols.MIXED, label: 'Mixed' },
+        { value: Protocols.TUNNEL, label: 'Tunnel' },
+    ];
 
     inModalApp = new Vue({
         delimiters: ['[[', ']]'],
@@ -86,15 +99,7 @@
             get dbInbound() {
                 return inModal.dbInbound;
             },
-            get protocolOptions() {
-                if (inModal.inbound && inModal.inbound.protocol === Protocols.TROJAN) {
-                    return {
-                        ...protocols,
-                        TROJAN: Protocols.TROJAN,
-                    };
-                }
-                return protocols;
-            }
+            protocolOptions: protocolOptions
         },
         methods: {
             ensureTlsCertificateModel() {
