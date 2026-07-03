@@ -23,10 +23,6 @@
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
         ok() {
-            if (inModalApp && inModalApp.isRealityModeActive()) {
-                inModalApp.$message.warning('REALITY config generation is not enabled yet.');
-                return;
-            }
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
         show({ title='', okText='确定', inbound=null, dbInbound=null, confirm=(inbound, dbInbound)=>{} }) {
@@ -335,9 +331,9 @@
                         this.ensureRealityModel();
                         this.inbound.tls = false;
                         this.inbound.xtls = false;
-                        this.inbound.stream.security = 'none';
+                        this.inbound.stream.security = 'reality';
                         this.inModal.experimentalSecurityMode = 'reality';
-                        this.$message.info('REALITY config generation is not enabled yet.');
+                        this.$message.info('REALITY is experimental. Saving is limited to VLESS + RAW(TCP) and validated by backend.');
                         return;
                     default:
                         return;

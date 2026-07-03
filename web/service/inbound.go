@@ -35,6 +35,7 @@ type socksInboundSettings struct {
 }
 
 var rateLimitRegexp = regexp.MustCompile(`(?i)^(\d+(?:\.\d+)?)(kbit|mbit|gbit|kbps|mbps|gbps|kbyte(?:/s)?|mbyte(?:/s)?|gbyte(?:/s)?)?$`)
+var realityShortIDRegexp = regexp.MustCompile(`^[0-9a-fA-F]+$`)
 
 func normalizeRate(rate string) string {
 	rate = strings.TrimSpace(strings.ToLower(rate))
@@ -178,6 +179,203 @@ func normalizeSocksUDPValue(value interface{}) bool {
 	return true
 }
 
+func trimJSONStringValue(value interface{}) string {
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
+func normalizeRealityStringList(value interface{}) []string {
+	items := make([]string, 0)
+	appendValue := func(text string) {
+		text = strings.TrimSpace(text)
+		if text != "" {
+			items = append(items, text)
+		}
+	}
+
+	switch v := value.(type) {
+	case []string:
+		for _, item := range v {
+			appendValue(item)
+		}
+	case []interface{}:
+		for _, item := range v {
+			appendValue(trimJSONStringValue(item))
+		}
+	case string:
+		normalized := strings.ReplaceAll(v, "\r\n", "\n")
+		normalized = strings.ReplaceAll(normalized, `\n`, "\n")
+		for _, item := range strings.Split(normalized, "\n") {
+			appendValue(item)
+		}
+	}
+	return items
+}
+
+func normalizeRealityMaxTimeDiff(value interface{}) (int64, bool) {
+	switch v := value.(type) {
+	case float64:
+		if v > 0 {
+			return int64(v), true
+		}
+	case float32:
+		if v > 0 {
+			return int64(v), true
+		}
+	case int:
+		if v > 0 {
+			return int64(v), true
+		}
+	case int32:
+		if v > 0 {
+			return int64(v), true
+		}
+	case int64:
+		if v > 0 {
+			return v, true
+		}
+	case json.Number:
+		if num, err := v.Int64(); err == nil && num > 0 {
+			return num, true
+		}
+	}
+	return 0, false
+}
+
+func normalizeRealityShow(value interface{}) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		switch strings.ToLower(strings.TrimSpace(v)) {
+		case "1", "true", "yes", "on":
+			return true
+		}
+	case float64:
+		return v != 0
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	}
+	return false
+}
+
+func validateRealityShortIDs(items []string) error {
+	for _, item := range items {
+		if len(item) == 0 {
+			return common.NewError("REALITY shortIds 不能为空")
+		}
+		if len(item) > 16 {
+			return common.NewError("REALITY shortId 长度不能超过 16:", item)
+		}
+		if len(item)%2 != 0 {
+			return common.NewError("REALITY shortId 长度必须为偶数:", item)
+		}
+		if !realityShortIDRegexp.MatchString(item) {
+			return common.NewError("REALITY shortId 必须是十六进制:", item)
+		}
+	}
+	return nil
+}
+
+func (s *InboundService) normalizeStreamSettings(inbound *model.Inbound) error {
+	raw := strings.TrimSpace(inbound.StreamSettings)
+	if raw == "" {
+		return nil
+	}
+	if !strings.Contains(strings.ToLower(raw), "reality") {
+		return nil
+	}
+
+	stream := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(raw), &stream); err != nil {
+		return err
+	}
+
+	security := strings.ToLower(trimJSONStringValue(stream["security"]))
+	if security != "reality" {
+		return nil
+	}
+	if inbound.Protocol != model.VLESS {
+		return common.NewError("REALITY 第一轮仅支持 VLESS 入站")
+	}
+
+	network := strings.ToLower(trimJSONStringValue(stream["network"]))
+	if network != "tcp" {
+		return common.NewError("REALITY 第一轮仅支持 RAW(TCP) 传输")
+	}
+
+	if tcpSettings, ok := stream["tcpSettings"].(map[string]interface{}); ok {
+		if header, ok := tcpSettings["header"].(map[string]interface{}); ok {
+			headerType := strings.ToLower(trimJSONStringValue(header["type"]))
+			if headerType != "" && headerType != "none" {
+				return common.NewError("REALITY 第一轮不支持 TCP HTTP camouflage")
+			}
+		}
+	}
+
+	realitySettings, ok := stream["realitySettings"].(map[string]interface{})
+	if !ok {
+		return common.NewError("REALITY 缺少 realitySettings")
+	}
+
+	target := trimJSONStringValue(realitySettings["target"])
+	if target == "" {
+		target = trimJSONStringValue(realitySettings["dest"])
+	}
+	if target == "" {
+		return common.NewError("REALITY target/dest 不能为空")
+	}
+
+	serverNames := normalizeRealityStringList(realitySettings["serverNames"])
+	if len(serverNames) == 0 {
+		return common.NewError("REALITY serverNames 至少需要一个值")
+	}
+
+	privateKey := trimJSONStringValue(realitySettings["privateKey"])
+	if privateKey == "" {
+		return common.NewError("REALITY privateKey 不能为空")
+	}
+
+	shortIDs := normalizeRealityStringList(realitySettings["shortIds"])
+	if len(shortIDs) == 0 {
+		return common.NewError("REALITY shortIds 至少需要一个值")
+	}
+	if err := validateRealityShortIDs(shortIDs); err != nil {
+		return err
+	}
+
+	normalizedReality := map[string]interface{}{
+		"target":      target,
+		"serverNames": serverNames,
+		"privateKey":  privateKey,
+		"shortIds":    shortIDs,
+		"show":        normalizeRealityShow(realitySettings["show"]),
+	}
+	if maxTimeDiff, ok := normalizeRealityMaxTimeDiff(realitySettings["maxTimeDiff"]); ok {
+		normalizedReality["maxTimeDiff"] = maxTimeDiff
+	}
+
+	normalizedStream := map[string]interface{}{
+		"network":         "tcp",
+		"security":        "reality",
+		"realitySettings": normalizedReality,
+	}
+	if tcpSettings, ok := stream["tcpSettings"].(map[string]interface{}); ok && len(tcpSettings) > 0 {
+		normalizedStream["tcpSettings"] = tcpSettings
+	}
+
+	data, err := json.Marshal(normalizedStream)
+	if err != nil {
+		return err
+	}
+	inbound.StreamSettings = string(data)
+	return nil
+}
+
 func (s *InboundService) CleanupLegacyTrojanSettings() error {
 	db := database.GetDB()
 	inbounds := make([]*model.Inbound, 0)
@@ -278,6 +476,9 @@ func (s *InboundService) checkPortExist(port int, ignoreId int) (bool, error) {
 func (s *InboundService) AddInbound(inbound *model.Inbound) error {
 	s.normalizeLimit(inbound)
 	s.normalizeProtocolSettings(inbound)
+	if err := s.normalizeStreamSettings(inbound); err != nil {
+		return err
+	}
 	exist, err := s.checkPortExist(inbound.Port, 0)
 	if err != nil {
 		return err
@@ -293,6 +494,9 @@ func (s *InboundService) AddInbounds(inbounds []*model.Inbound) error {
 	for _, inbound := range inbounds {
 		s.normalizeLimit(inbound)
 		s.normalizeProtocolSettings(inbound)
+		if err := s.normalizeStreamSettings(inbound); err != nil {
+			return err
+		}
 		exist, err := s.checkPortExist(inbound.Port, 0)
 		if err != nil {
 			return err
@@ -341,6 +545,9 @@ func (s *InboundService) GetInbound(id int) (*model.Inbound, error) {
 func (s *InboundService) UpdateInbound(inbound *model.Inbound) error {
 	s.normalizeLimit(inbound)
 	s.normalizeProtocolSettings(inbound)
+	if err := s.normalizeStreamSettings(inbound); err != nil {
+		return err
+	}
 	exist, err := s.checkPortExist(inbound.Port, inbound.Id)
 	if err != nil {
 		return err
