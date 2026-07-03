@@ -801,6 +801,7 @@ class StreamSettings extends XrayCommonClass {
         return {
             network: network,
             security: this.security,
+            realitySettings: this.isReality ? this.reality.toJson() : undefined,
             tlsSettings: this.isTls ? this.tls.toJson() : undefined,
             xtlsSettings: this.isXTls ? this.tls.toJson() : undefined,
             tcpSettings: network === 'tcp' ? this.tcp.toJson() : undefined,

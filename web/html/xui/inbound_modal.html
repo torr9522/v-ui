@@ -24,7 +24,7 @@
         dbInbound: new DBInbound(),
         ok() {
             if (inModalApp && inModalApp.isRealityModeActive()) {
-                inModalApp.$message.warning('REALITY UI skeleton is ready, config generation will be enabled in the next phase.');
+                inModalApp.$message.warning('REALITY config generation is not enabled yet.');
                 return;
             }
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
@@ -183,6 +183,9 @@
                 if (typeof reality.maxTimeDiff === 'undefined') {
                     this.$set(reality, 'maxTimeDiff', 0);
                 }
+                if (typeof reality.flow === 'undefined') {
+                    this.$set(reality, 'flow', '');
+                }
                 return reality;
             },
             ensureSniffingModel() {
@@ -334,7 +337,7 @@
                         this.inbound.xtls = false;
                         this.inbound.stream.security = 'none';
                         this.inModal.experimentalSecurityMode = 'reality';
-                        this.$message.info('REALITY UI skeleton is ready. Saving will be enabled in the next phase.');
+                        this.$message.info('REALITY config generation is not enabled yet.');
                         return;
                     default:
                         return;

@@ -48,9 +48,10 @@
 
 ## Compatibility Boundary
 
-本轮保持以下边界不变：
+当前阶段保持以下边界不变：
 
-- `StreamSettings.toJson()` 仍不输出 `realitySettings`
+- `StreamSettings.toJson()` 仅在 `security=reality` 时前端承载 `realitySettings`
+- 点击保存时仍拦截 REALITY，不进入可运行配置保存
 - 现有 `TLS` 保存逻辑不变
 - 现有 `XTLS` 兼容逻辑不变
 - 现有 `VMess / VLESS / Trojan / Shadowsocks` 行为不变
@@ -58,8 +59,8 @@
 这意味着：
 
 - 旧配置仍按原逻辑工作
-- `REALITY` 只是更完整的前端模型
-- 不会把未完成的 `REALITY` 数据误送进当前生成链路
+- `REALITY` 已具备前端模型承载与回显
+- 未完成的 `REALITY` 数据仍不会进入当前运行生成链路
 
 ## Next Phase Split
 
