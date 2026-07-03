@@ -86,6 +86,16 @@
         { value: Protocols.TUNNEL, label: 'Tunnel' },
     ];
 
+    const transportOptions = [
+        { value: 'tcp', label: 'RAW' },
+        { value: 'ws', label: 'WebSocket' },
+        { value: 'grpc', label: 'gRPC' },
+        { value: 'http', label: 'HTTP Legacy', hint: 'Deprecated / Compatibility' },
+        { value: 'kcp', label: 'mKCP Legacy', hint: 'Deprecated / Compatibility' },
+        { value: 'quic', label: 'QUIC Legacy', hint: 'Deprecated / Compatibility' },
+        { value: 'xhttp', label: 'XHTTP', hint: 'Coming Soon / Not enabled in this build' },
+    ];
+
     inModalApp = new Vue({
         delimiters: ['[[', ']]'],
         el: '#inbound-modal',
@@ -99,7 +109,8 @@
             get dbInbound() {
                 return inModal.dbInbound;
             },
-            protocolOptions: protocolOptions
+            protocolOptions: protocolOptions,
+            transportOptions: transportOptions
         },
         methods: {
             ensureTlsCertificateModel() {
@@ -155,12 +166,14 @@
                 switch (network) {
                     case 'tcp':
                         return 'RAW';
+                    case 'xhttp':
+                        return 'XHTTP';
                     case 'http':
-                        return 'HTTP (Legacy)';
+                        return 'HTTP Legacy';
                     case 'kcp':
-                        return 'mKCP (Legacy)';
+                        return 'mKCP Legacy';
                     case 'quic':
-                        return 'QUIC (Legacy)';
+                        return 'QUIC Legacy';
                     case 'ws':
                         return 'WebSocket';
                     case 'grpc':
@@ -171,12 +184,88 @@
             },
             securityDisplayName() {
                 if (this.inbound.xtls) {
-                    return 'XTLS (Deprecated)';
+                    return 'XTLS Legacy';
                 }
                 if (this.inbound.tls) {
                     return 'TLS';
                 }
                 return 'None';
+            },
+            currentTransportSelection() {
+                return this.inbound.stream.network || 'tcp';
+            },
+            applyTransportSelection(selected) {
+                if (selected === 'xhttp') {
+                    this.$message.info('XHTTP support is planned for next phase');
+                    return;
+                }
+                this.inbound.stream.network = selected;
+            },
+            formatTransportOption(option) {
+                if (!option || !option.hint) {
+                    return option ? option.label : '';
+                }
+                return `${option.label} (${option.hint})`;
+            },
+            currentSecurityMode() {
+                if (this.inbound.xtls) {
+                    return 'xtls';
+                }
+                if (this.inbound.tls) {
+                    return 'tls';
+                }
+                return 'none';
+            },
+            securityOptions() {
+                const options = [
+                    { value: 'none', label: 'None' },
+                    { value: 'tls', label: 'TLS' },
+                ];
+                if (this.inbound.canEnableXTls() || this.inbound.xtls) {
+                    options.push({
+                        value: 'xtls',
+                        label: 'XTLS Legacy',
+                        hint: 'Deprecated / Compatibility',
+                    });
+                }
+                options.push({
+                    value: 'reality',
+                    label: 'REALITY',
+                    hint: 'Coming Soon / Not enabled in this build',
+                });
+                return options;
+            },
+            applySecurityMode(selected) {
+                switch (selected) {
+                    case 'none':
+                        this.inbound.tls = false;
+                        this.inbound.xtls = false;
+                        return;
+                    case 'tls':
+                        this.inbound.xtls = false;
+                        this.inbound.tls = true;
+                        return;
+                    case 'xtls':
+                        if (!this.inbound.canEnableXTls() && !this.inbound.xtls) {
+                            this.$message.warning('XTLS is only available for compatibility on VLESS/Trojan over RAW(TCP)');
+                            return;
+                        }
+                        this.inbound.tls = false;
+                        this.inbound.xtls = true;
+                        return;
+                    case 'reality':
+                        this.$message.info('REALITY support is planned for next phase');
+                        return;
+                    default:
+                        return;
+                }
+            },
+            hasVisionFlowField() {
+                return this.inbound.protocol === Protocols.VLESS &&
+                    this.inbound.settings &&
+                    this.inbound.settings.vlesses &&
+                    this.inbound.settings.vlesses[0] &&
+                    (this.inbound.xtls || String(this.inbound.settings.vlesses[0].flow || '').trim() !== '');
             },
             inboundSummary() {
                 const protocol = String(this.inbound.protocol || '').toUpperCase() || 'INBOUND';
@@ -317,6 +406,15 @@
                 if (oldValue === 'kcp') {
                     this.inModal.inbound.tls = false;
                 }
+            },
+            hasLegacyTransport(network) {
+                return ['http', 'kcp', 'quic'].includes(network);
+            },
+            isLegacyRawHttpCamouflage() {
+                return this.inbound.stream &&
+                    this.inbound.stream.network === 'tcp' &&
+                    this.inbound.stream.tcp &&
+                    this.inbound.stream.tcp.type === 'http';
             }
         },
         watch: {

@@ -1,12 +1,19 @@
 {{define "form/tlsSettings"}}
 <a-form layout="vertical" v-if="inbound.canSetTls()">
     <a-form-item label="Security">
-        <a-switch v-model="inbound.tls">
-        </a-switch>
+        <a-select :value="currentSecurityMode()" @change="applySecurityMode">
+            <a-select-option v-for="option in securityOptions()" :key="option.value" :value="option.value">
+                [[ option.hint ? `${option.label} (${option.hint})` : option.label ]]
+            </a-select-option>
+        </a-select>
     </a-form-item>
-    <a-form-item v-if="inbound.canEnableXTls()" label="XTLS (Deprecated)">
-        <a-switch v-model="inbound.xtls"></a-switch>
-    </a-form-item>
+    <a-alert
+            type="info"
+            show-icon
+            style="margin-bottom: 16px;"
+            message="REALITY is planned for next phase."
+            description="This build only provides the security shell. Selecting REALITY will not change the saved security value yet.">
+    </a-alert>
 </a-form>
 
 <a-form v-if="inbound.tls || inbound.xtls"
@@ -74,7 +81,7 @@
     <a-alert v-if="inbound.xtls"
             type="warning"
             show-icon
-            message="XTLS 入口仅保留兼容编辑能力。">
+            message="XTLS is deprecated and kept for compatibility only.">
     </a-alert>
 </a-form>
 {{end}}

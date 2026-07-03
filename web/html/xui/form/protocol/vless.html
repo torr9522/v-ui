@@ -3,7 +3,15 @@
     <a-form-item label="id">
         <a-input v-model.trim="inbound.settings.vlesses[0].id" placeholder="客户端 UUID"></a-input>
     </a-form-item>
-    <a-form-item v-if="inbound.xtls" label="flow">
+    <a-alert
+            v-if="hasVisionFlowField()"
+            type="info"
+            show-icon
+            style="margin-bottom: 12px;"
+            message="Vision Flow / Flow"
+            description="Vision is supported only by modern VLESS/XTLS-compatible configurations. Full modern REALITY/Vision UI is planned.">
+    </a-alert>
+    <a-form-item v-if="hasVisionFlowField()" label="Vision Flow / Flow">
         <a-select v-model="inbound.settings.vlesses[0].flow" style="width: 150px">
             <a-select-option value="">无</a-select-option>
             <a-select-option v-for="key in FLOW_CONTROL" :value="key">[[ key ]]</a-select-option>

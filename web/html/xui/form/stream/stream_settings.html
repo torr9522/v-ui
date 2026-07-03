@@ -1,15 +1,26 @@
 {{define "form/streamSettings"}}
 <a-form layout="vertical">
     <a-form-item label="传输">
-        <a-select v-model="inbound.stream.network" @change="streamNetworkChange">
-            <a-select-option value="tcp">RAW</a-select-option>
-            <a-select-option value="ws">WebSocket</a-select-option>
-            <a-select-option value="grpc">gRPC</a-select-option>
-            <a-select-option value="http">HTTP (Legacy)</a-select-option>
-            <a-select-option value="kcp">mKCP (Legacy)</a-select-option>
-            <a-select-option value="quic">QUIC (Legacy)</a-select-option>
+        <a-select :value="currentTransportSelection()" @change="applyTransportSelection">
+            <a-select-option v-for="option in transportOptions" :key="option.value" :value="option.value">
+                [[ formatTransportOption(option) ]]
+            </a-select-option>
         </a-select>
     </a-form-item>
+    <a-alert
+            v-if="hasLegacyTransport(inbound.stream.network)"
+            type="warning"
+            show-icon
+            style="margin-bottom: 12px;"
+            :message="`${transportDisplayName(inbound.stream.network)} is kept for compatibility only.`">
+    </a-alert>
+    <a-alert
+            type="info"
+            show-icon
+            style="margin-bottom: 12px;"
+            message="XHTTP is planned for next phase."
+            description="This build only provides the modern transport label shell. Selecting XHTTP will not change the saved network value yet.">
+    </a-alert>
 </a-form>
 
 <template v-if="inbound.stream.network === 'tcp'">
