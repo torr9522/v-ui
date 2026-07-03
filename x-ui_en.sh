@@ -441,29 +441,15 @@ show_xray_status() {
 }
 
 #this will be an entrance for ssl cert issue
-#here we can provide two different methods to issue cert
-#first.standalone mode second.DNS API mode
+#certificate issue keeps the HTTP-01 standalone mainline only
 ssl_cert_issue() {
-    local method=""
     echo -E ""
     LOGD "********Usage********"
     LOGI "this shell script will use acme to help issue certs."
-    LOGI "here we provide two methods for issuing certs:"
-    LOGI "method 1:acme standalone mode,need to keep port:80 open"
-    LOGI "method 2:acme DNS API mode,need provide Cloudflare Global API Key"
-    LOGI "recommend method 2 first,if it fails,you can try method 1."
+    LOGI "only the acme HTTP-01 standalone mainline is kept."
+    LOGI "please make sure port 80 is reachable and the domain resolves to this server."
     LOGI "certs will be installed in /root/cert directory"
-    read -p "please choose which method do you want,type 1 or 2": method
-    LOGI "you choosed method:${method}"
-
-    if [ "${method}" == "1" ]; then
-        ssl_cert_issue_standalone
-    elif [ "${method}" == "2" ]; then
-        ssl_cert_issue_by_cloudflare
-    else
-        LOGE "invalid input,please check it..."
-        exit 1
-    fi
+    ssl_cert_issue_standalone
 }
 
 install_acme() {
@@ -563,87 +549,6 @@ ssl_cert_issue_standalone() {
         chmod 755 $certPath
     fi
 
-}
-
-#method for DNS API mode
-ssl_cert_issue_by_cloudflare() {
-    echo -E ""
-    LOGD "******Preconditions******"
-    LOGI "1.need Cloudflare account associated email"
-    LOGI "2.need Cloudflare Global API Key"
-    LOGI "3.your domain use Cloudflare as resolver"
-    confirm "I have confirmed all these info above[y/n]" "y"
-    if [ $? -eq 0 ]; then
-        install_acme
-        if [ $? -ne 0 ]; then
-            LOGE "install acme failed,please check logs"
-            exit 1
-        fi
-        CF_Domain=""
-        CF_GlobalKey=""
-        CF_AccountEmail=""
-        certPath=/root/cert
-        if [ ! -d "$certPath" ]; then
-            mkdir $certPath
-        fi
-        LOGD "please input your domain:"
-        read -p "Input your domain here:" CF_Domain
-        LOGD "your domain is:${CF_Domain},check it..."
-        #here we need to judge whether there exists cert already
-        local currentCert=$(~/.acme.sh/acme.sh --list | grep ${CF_Domain} | wc -l)
-        if [ ${currentCert} -ne 0 ]; then
-            local certInfo=$(~/.acme.sh/acme.sh --list)
-            LOGE "system already have certs here,can not issue again,current certs details:"
-            LOGI "$certInfo"
-            exit 1
-        else
-            LOGI "your domain is ready for issuing cert now..."
-        fi
-        LOGD "please inout your cloudflare global API key:"
-        read -p "Input your key here:" CF_GlobalKey
-        LOGD "your cloudflare global API key is:${CF_GlobalKey}"
-        LOGD "please input your cloudflare account email:"
-        read -p "Input your email here:" CF_AccountEmail
-        LOGD "your cloudflare account email:${CF_AccountEmail}"
-        ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-        if [ $? -ne 0 ]; then
-            LOGE "change the default CA to Lets'Encrypt failed,exit"
-            exit 1
-        fi
-        export CF_Key="${CF_GlobalKey}"
-        export CF_Email=${CF_AccountEmail}
-        ~/.acme.sh/acme.sh --issue --dns dns_cf -d ${CF_Domain} -d *.${CF_Domain} --log
-        if [ $? -ne 0 ]; then
-            LOGE "issue cert failed,exit"
-            rm -rf ~/.acme.sh/${CF_Domain}
-            exit 1
-        else
-            LOGI "issue cert succeed,installing..."
-        fi
-        ~/.acme.sh/acme.sh --installcert -d ${CF_Domain} -d *.${CF_Domain} --ca-file /root/cert/ca.cer \
-            --cert-file /root/cert/${CF_Domain}.cer --key-file /root/cert/${CF_Domain}.key \
-            --fullchain-file /root/cert/fullchain.cer
-        if [ $? -ne 0 ]; then
-            LOGE "install cert failed,exit"
-            rm -rf ~/.acme.sh/${CF_Domain}
-            exit 1
-        else
-            LOGI "install cert succeed,enable auto renew..."
-        fi
-        ~/.acme.sh/acme.sh --upgrade --auto-upgrade
-        if [ $? -ne 0 ]; then
-            LOGE "enable auto renew failed,exit"
-            ls -lah cert
-            chmod 755 $certPath
-            exit 1
-        else
-            LOGI "enable auto renew succeed,cert details:"
-            ls -lah cert
-            chmod 755 $certPath
-        fi
-    else
-        show_menu
-    fi
 }
 
 #add for cron jobs,including sync geo data,check logs and restart x-ui

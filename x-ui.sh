@@ -446,28 +446,13 @@ show_xray_status() {
 }
 
 #this will be an entrance for ssl cert issue
-#here we can provide two different methods to issue cert
-#first.standalone mode second.DNS API mode
+#certificate issue keeps the HTTP-01 standalone mainline only
 ssl_cert_issue() {
-    local method=""
     echo -E ""
     LOGD "******使用说明******"
-    LOGI "该脚本提供两种方式实现证书签发,证书安装路径均为/root/cert"
-    LOGI "方式1:acme standalone mode,需要保持端口开放"
-    LOGI "方式2:acme DNS API mode,需要提供Cloudflare Global API Key"
-    LOGI "如域名属于免费域名,则推荐使用方式1进行申请"
-    LOGI "如域名非免费域名且使用Cloudflare进行解析使用方式2进行申请"
-    read -p "请选择你想使用的方式,输入数字1或者2后回车": method
-    LOGI "你所使用的方式为${method}"
-
-    if [ "${method}" == "1" ]; then
-        ssl_cert_issue_standalone
-    elif [ "${method}" == "2" ]; then
-        ssl_cert_issue_by_cloudflare
-    else
-        LOGE "输入无效,请检查你的输入,脚本将退出..."
-        exit 1
-    fi
+    LOGI "当前仅保留 acme HTTP-01 standalone 主线,证书安装路径为/root/cert"
+    LOGI "申请前请确认 80 端口可用,且域名已解析到当前服务器"
+    ssl_cert_issue_standalone
 }
 
 install_acme() {
@@ -566,89 +551,6 @@ ssl_cert_issue_standalone() {
         chmod 755 $certPath
     fi
 
-}
-
-#method for DNS API mode
-ssl_cert_issue_by_cloudflare() {
-    echo -E ""
-    LOGD "******使用说明******"
-    LOGI "该脚本将使用Acme脚本申请证书,使用时需保证:"
-    LOGI "1.知晓Cloudflare 注册邮箱"
-    LOGI "2.知晓Cloudflare Global API Key"
-    LOGI "3.域名已通过Cloudflare进行解析到当前服务器"
-    LOGI "4.该脚本申请证书默认安装路径为/root/cert目录"
-    confirm "我已确认以上内容[y/n]" "y"
-    if [ $? -eq 0 ]; then
-        install_acme
-        if [ $? -ne 0 ]; then
-            LOGE "无法安装acme,请检查错误日志"
-            exit 1
-        fi
-        CF_Domain=""
-        CF_GlobalKey=""
-        CF_AccountEmail=""
-        certPath=/root/cert
-        if [ ! -d "$certPath" ]; then
-            mkdir $certPath
-        fi
-        LOGD "请设置域名:"
-        read -p "Input your domain here:" CF_Domain
-        LOGD "你的域名设置为:${CF_Domain},正在进行域名合法性校验..."
-        #here we need to judge whether there exists cert already
-        local currentCert=$(~/.acme.sh/acme.sh --list | grep ${CF_Domain} | wc -l)
-        if [ ${currentCert} -ne 0 ]; then
-            local certInfo=$(~/.acme.sh/acme.sh --list)
-            LOGE "域名合法性校验失败,当前环境已有对应域名证书,不可重复申请,当前证书详情:"
-            LOGI "$certInfo"
-            exit 1
-        else
-            LOGI "域名合法性校验通过..."
-        fi
-        LOGD "请设置API密钥:"
-        read -p "Input your key here:" CF_GlobalKey
-        LOGD "你的API密钥为:${CF_GlobalKey}"
-        LOGD "请设置注册邮箱:"
-        read -p "Input your email here:" CF_AccountEmail
-        LOGD "你的注册邮箱为:${CF_AccountEmail}"
-        ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
-        if [ $? -ne 0 ]; then
-            LOGE "修改默认CA为Lets'Encrypt失败,脚本退出"
-            exit 1
-        fi
-        export CF_Key="${CF_GlobalKey}"
-        export CF_Email=${CF_AccountEmail}
-        ~/.acme.sh/acme.sh --issue --dns dns_cf -d ${CF_Domain} -d *.${CF_Domain} --log
-        if [ $? -ne 0 ]; then
-            LOGE "证书签发失败,脚本退出"
-            rm -rf ~/.acme.sh/${CF_Domain}
-            exit 1
-        else
-            LOGI "证书签发成功,安装中..."
-        fi
-        ~/.acme.sh/acme.sh --installcert -d ${CF_Domain} -d *.${CF_Domain} --ca-file /root/cert/ca.cer \
-            --cert-file /root/cert/${CF_Domain}.cer --key-file /root/cert/${CF_Domain}.key \
-            --fullchain-file /root/cert/fullchain.ce
-        if [ $? -ne 0 ]; then
-            LOGE "证书安装失败,脚本退出"
-            rm -rf ~/.acme.sh/${CF_Domain}
-            exit 1
-        else
-            LOGI "证书安装成功,开启自动更新..."
-        fi
-        ~/.acme.sh/acme.sh --upgrade --auto-upgrade
-        if [ $? -ne 0 ]; then
-            LOGE "自动更新设置失败,脚本退出"
-            ls -lah cert
-            chmod 755 $certPath
-            exit 1
-        else
-            LOGI "证书已安装且已开启自动更新,具体信息如下"
-            ls -lah cert
-            chmod 755 $certPath
-        fi
-    else
-        show_menu
-    fi
 }
 
 #add for cron jobs,including sync geo data,check logs and restart x-ui
