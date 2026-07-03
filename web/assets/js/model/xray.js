@@ -486,10 +486,66 @@ TlsStreamSettings.Cert = class extends XrayCommonClass {
     }
 };
 
+class RealityStreamSettings extends XrayCommonClass {
+    constructor(dest='',
+                serverNames=[],
+                privateKey='',
+                shortIds=[],
+                publicKey='',
+                shortId='',
+                fingerprint='chrome',
+                spiderX='',
+                show=false,
+                maxTimeDiff=0) {
+        super();
+        this.dest = dest;
+        this.serverNames = Array.isArray(serverNames) ? serverNames : [];
+        this.privateKey = privateKey;
+        this.shortIds = Array.isArray(shortIds) ? shortIds : [];
+        this.publicKey = publicKey;
+        this.shortId = shortId;
+        this.fingerprint = fingerprint;
+        this.spiderX = spiderX;
+        this.show = show;
+        this.maxTimeDiff = Number.isFinite(maxTimeDiff) ? maxTimeDiff : 0;
+    }
+
+    static fromJson(json={}) {
+        return new RealityStreamSettings(
+            json.dest || '',
+            Array.isArray(json.serverNames) ? json.serverNames : [],
+            json.privateKey || '',
+            Array.isArray(json.shortIds) ? json.shortIds : [],
+            json.publicKey || '',
+            json.shortId || '',
+            json.fingerprint || 'chrome',
+            json.spiderX || '',
+            !!json.show,
+            Number.isFinite(json.maxTimeDiff) ? json.maxTimeDiff : 0,
+        );
+    }
+
+    toJson() {
+        return {
+            dest: this.dest,
+            serverNames: ObjectUtil.clone(this.serverNames),
+            privateKey: this.privateKey,
+            shortIds: ObjectUtil.clone(this.shortIds),
+            publicKey: this.publicKey,
+            shortId: this.shortId,
+            fingerprint: this.fingerprint,
+            spiderX: this.spiderX,
+            show: this.show,
+            maxTimeDiff: this.maxTimeDiff,
+        };
+    }
+}
+
 class StreamSettings extends XrayCommonClass {
     constructor(network='tcp',
                 security='none',
                 tlsSettings=new TlsStreamSettings(),
+                realitySettings=new RealityStreamSettings(),
                 tcpSettings=new TcpStreamSettings(),
                 kcpSettings=new KcpStreamSettings(),
                 wsSettings=new WsStreamSettings(),
@@ -501,6 +557,7 @@ class StreamSettings extends XrayCommonClass {
         this.network = network;
         this.security = security;
         this.tls = tlsSettings;
+        this.reality = realitySettings;
         this.tcp = tcpSettings;
         this.kcp = kcpSettings;
         this.ws = wsSettings;
@@ -533,6 +590,18 @@ class StreamSettings extends XrayCommonClass {
         }
     }
 
+    get isReality() {
+        return this.security === 'reality';
+    }
+
+    set isReality(isReality) {
+        if (isReality) {
+            this.security = 'reality';
+        } else {
+            this.security = 'none';
+        }
+    }
+
     static fromJson(json={}) {
         let tls;
         if (json.security === "xtls") {
@@ -540,10 +609,12 @@ class StreamSettings extends XrayCommonClass {
         } else {
             tls = TlsStreamSettings.fromJson(json.tlsSettings);
         }
+        const reality = RealityStreamSettings.fromJson(json.realitySettings);
         return new StreamSettings(
             json.network,
             json.security,
             tls,
+            reality,
             TcpStreamSettings.fromJson(json.tcpSettings),
             KcpStreamSettings.fromJson(json.kcpSettings),
             WsStreamSettings.fromJson(json.wsSettings),
@@ -643,6 +714,18 @@ class Inbound extends XrayCommonClass {
     set xtls(isXTls) {
         if (isXTls) {
             this.stream.security = 'xtls';
+        } else {
+            this.stream.security = 'none';
+        }
+    }
+
+    get reality() {
+        return this.stream.security === 'reality';
+    }
+
+    set reality(isReality) {
+        if (isReality) {
+            this.stream.security = 'reality';
         } else {
             this.stream.security = 'none';
         }

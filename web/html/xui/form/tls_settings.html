@@ -11,10 +11,14 @@
             type="info"
             show-icon
             style="margin-bottom: 16px;"
-            message="REALITY is planned for next phase."
-            description="This build only provides the security shell. Selecting REALITY will not change the saved security value yet.">
+            message="REALITY Experimental"
+            description="This phase provides the front-end skeleton only. REALITY submissions are blocked until config generation is implemented.">
     </a-alert>
 </a-form>
+
+<template v-if="isRealityModeActive()">
+    {{template "form/realitySettings"}}
+</template>
 
 <a-form v-if="inbound.tls || inbound.xtls"
         layout="vertical">

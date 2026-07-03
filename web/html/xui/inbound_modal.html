@@ -14,6 +14,7 @@
         okText: '确定',
         activeTab: 'basic',
         confirm: null,
+        experimentalSecurityMode: '',
         usableCertificates: [],
         usableCertificatesLoading: false,
         tlsAutoFillNotice: '',
@@ -22,6 +23,10 @@
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
         ok() {
+            if (inModalApp && inModalApp.isRealityModeActive()) {
+                inModalApp.$message.warning('REALITY UI skeleton is ready, config generation will be enabled in the next phase.');
+                return;
+            }
             ObjectUtil.execute(inModal.confirm, inModal.inbound, inModal.dbInbound);
         },
         show({ title='', okText='确定', inbound=null, dbInbound=null, confirm=(inbound, dbInbound)=>{} }) {
@@ -43,9 +48,11 @@
             this.tlsAutoFillNotice = '';
             this.lastAutoAppliedCertFile = '';
             this.lastAutoAppliedKeyFile = '';
+            this.experimentalSecurityMode = this.inbound.stream && this.inbound.stream.security === 'reality' ? 'reality' : '';
             this.confirm = confirm;
             if (inModalApp) {
                 inModalApp.ensureTlsCertificateModel();
+                inModalApp.ensureRealityModel();
                 inModalApp.ensureSniffingModel();
             }
             this.visible = true;
@@ -141,6 +148,43 @@
                 }
                 return cert;
             },
+            ensureRealityModel() {
+                if (!this.inbound.stream.reality) {
+                    this.$set(this.inbound.stream, 'reality', new RealityStreamSettings());
+                }
+                const reality = this.inbound.stream.reality;
+                if (!Array.isArray(reality.serverNames)) {
+                    this.$set(reality, 'serverNames', []);
+                }
+                if (!Array.isArray(reality.shortIds)) {
+                    this.$set(reality, 'shortIds', []);
+                }
+                if (typeof reality.dest === 'undefined') {
+                    this.$set(reality, 'dest', '');
+                }
+                if (typeof reality.privateKey === 'undefined') {
+                    this.$set(reality, 'privateKey', '');
+                }
+                if (typeof reality.publicKey === 'undefined') {
+                    this.$set(reality, 'publicKey', '');
+                }
+                if (typeof reality.shortId === 'undefined') {
+                    this.$set(reality, 'shortId', '');
+                }
+                if (typeof reality.fingerprint === 'undefined') {
+                    this.$set(reality, 'fingerprint', 'chrome');
+                }
+                if (typeof reality.spiderX === 'undefined') {
+                    this.$set(reality, 'spiderX', '');
+                }
+                if (typeof reality.show === 'undefined') {
+                    this.$set(reality, 'show', false);
+                }
+                if (typeof reality.maxTimeDiff === 'undefined') {
+                    this.$set(reality, 'maxTimeDiff', 0);
+                }
+                return reality;
+            },
             ensureSniffingModel() {
                 if (!this.inbound.sniffing) {
                     this.$set(this.inbound, 'sniffing', new Sniffing());
@@ -183,6 +227,9 @@
                 }
             },
             securityDisplayName() {
+                if (this.isRealityModeActive()) {
+                    return 'REALITY Experimental';
+                }
                 if (this.inbound.xtls) {
                     return 'XTLS Legacy';
                 }
@@ -208,6 +255,9 @@
                 return `${option.label} (${option.hint})`;
             },
             currentSecurityMode() {
+                if (this.isRealityModeActive()) {
+                    return 'reality';
+                }
                 if (this.inbound.xtls) {
                     return 'xtls';
                 }
@@ -231,17 +281,37 @@
                 options.push({
                     value: 'reality',
                     label: 'REALITY',
-                    hint: 'Coming Soon / Not enabled in this build',
+                    hint: 'Experimental / Save blocked',
                 });
                 return options;
+            },
+            canUseRealitySkeleton() {
+                return this.inbound.protocol === Protocols.VLESS && this.inbound.stream.network === 'tcp';
+            },
+            isRealityModeActive() {
+                return this.inModal.experimentalSecurityMode === 'reality' || this.inbound.stream.security === 'reality';
+            },
+            clearExperimentalRealityMode() {
+                this.inModal.experimentalSecurityMode = '';
+                if (this.inbound.stream.security === 'reality') {
+                    this.inbound.stream.security = 'none';
+                }
+            },
+            resetRealityModeIfUnsupported() {
+                if (this.isRealityModeActive() && !this.canUseRealitySkeleton()) {
+                    this.clearExperimentalRealityMode();
+                    this.$message.warning('REALITY skeleton currently only targets VLESS + RAW(TCP).');
+                }
             },
             applySecurityMode(selected) {
                 switch (selected) {
                     case 'none':
+                        this.clearExperimentalRealityMode();
                         this.inbound.tls = false;
                         this.inbound.xtls = false;
                         return;
                     case 'tls':
+                        this.clearExperimentalRealityMode();
                         this.inbound.xtls = false;
                         this.inbound.tls = true;
                         return;
@@ -250,11 +320,21 @@
                             this.$message.warning('XTLS is only available for compatibility on VLESS/Trojan over RAW(TCP)');
                             return;
                         }
+                        this.clearExperimentalRealityMode();
                         this.inbound.tls = false;
                         this.inbound.xtls = true;
                         return;
                     case 'reality':
-                        this.$message.info('REALITY support is planned for next phase');
+                        if (!this.canUseRealitySkeleton()) {
+                            this.$message.info('REALITY UI skeleton currently targets VLESS + RAW(TCP) only.');
+                            return;
+                        }
+                        this.ensureRealityModel();
+                        this.inbound.tls = false;
+                        this.inbound.xtls = false;
+                        this.inbound.stream.security = 'none';
+                        this.inModal.experimentalSecurityMode = 'reality';
+                        this.$message.info('REALITY UI skeleton is ready. Saving will be enabled in the next phase.');
                         return;
                     default:
                         return;
@@ -265,7 +345,20 @@
                     this.inbound.settings &&
                     this.inbound.settings.vlesses &&
                     this.inbound.settings.vlesses[0] &&
-                    (this.inbound.xtls || String(this.inbound.settings.vlesses[0].flow || '').trim() !== '');
+                    (this.inbound.xtls || this.isRealityModeActive() || String(this.inbound.settings.vlesses[0].flow || '').trim() !== '');
+            },
+            realityListText(field) {
+                const reality = this.ensureRealityModel();
+                const value = reality[field];
+                return Array.isArray(value) ? value.join('\n') : '';
+            },
+            updateRealityList(field, value) {
+                const reality = this.ensureRealityModel();
+                const items = String(value || '')
+                    .split('\n')
+                    .map(item => item.trim())
+                    .filter(item => item !== '');
+                this.$set(reality, field, items);
             },
             inboundSummary() {
                 const protocol = String(this.inbound.protocol || '').toUpperCase() || 'INBOUND';
@@ -435,8 +528,15 @@
                     await this.ensureUsableCertificates();
                 }
             },
+            'inModal.inbound.protocol': function() {
+                this.resetRealityModeIfUnsupported();
+            },
+            'inModal.inbound.stream.network': function() {
+                this.resetRealityModeIfUnsupported();
+            },
             'inModal.visible': function(visible) {
                 if (visible) {
+                    this.ensureRealityModel();
                     this.ensureSniffingModel();
                 }
             }

@@ -1,0 +1,105 @@
+{{define "form/realitySettings"}}
+<a-form layout="vertical">
+    <a-alert
+            type="warning"
+            show-icon
+            style="margin-bottom: 16px;"
+            message="REALITY Experimental"
+            description="REALITY UI skeleton is ready. Config generation and runtime support will be enabled in the next phase.">
+    </a-alert>
+    <a-row :gutter="16">
+        <a-col :xs="24" :sm="12">
+            <a-form-item label="dest">
+                <a-input v-model.trim="inbound.stream.reality.dest" placeholder="例如：www.cloudflare.com:443"></a-input>
+            </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="12">
+            <a-form-item label="privateKey">
+                <a-input v-model.trim="inbound.stream.reality.privateKey" placeholder="REALITY private key"></a-input>
+            </a-form-item>
+        </a-col>
+    </a-row>
+    <a-row :gutter="16">
+        <a-col :xs="24" :sm="12">
+            <a-form-item>
+                <span slot="label">
+                    serverNames
+                    <a-tooltip>
+                        <template slot="title">
+                            每行一个 server name。第一轮只做前端骨架。
+                        </template>
+                        <a-icon type="question-circle" theme="filled"></a-icon>
+                    </a-tooltip>
+                </span>
+                <a-input
+                        type="textarea"
+                        :rows="4"
+                        :value="realityListText('serverNames')"
+                        @input="updateRealityList('serverNames', $event.target.value)"
+                        placeholder="例如：\nexample.com\ncdn.example.com"></a-input>
+            </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="12">
+            <a-form-item>
+                <span slot="label">
+                    shortIds
+                    <a-tooltip>
+                        <template slot="title">
+                            每行一个 short ID。第一轮只做前端骨架。
+                        </template>
+                        <a-icon type="question-circle" theme="filled"></a-icon>
+                    </a-tooltip>
+                </span>
+                <a-input
+                        type="textarea"
+                        :rows="4"
+                        :value="realityListText('shortIds')"
+                        @input="updateRealityList('shortIds', $event.target.value)"
+                        placeholder="例如：\n6ba85179e30d4fc2\n8f2a1b"></a-input>
+            </a-form-item>
+        </a-col>
+    </a-row>
+    <a-alert
+            type="info"
+            show-icon
+            style="margin-bottom: 16px;"
+            message="Client export fields will be enabled in the next phase."
+            description="publicKey / shortId / fingerprint will be connected with share-link and client export later.">
+    </a-alert>
+    <a-row :gutter="16">
+        <a-col :xs="24" :sm="8">
+            <a-form-item label="publicKey (Next phase)">
+                <a-input :value="inbound.stream.reality.publicKey" disabled placeholder="Will be derived for client export"></a-input>
+            </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="8">
+            <a-form-item label="shortId (Next phase)">
+                <a-input :value="inbound.stream.reality.shortId" disabled placeholder="Will be selected for client export"></a-input>
+            </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="8">
+            <a-form-item label="fingerprint (Next phase)">
+                <a-input :value="inbound.stream.reality.fingerprint" disabled placeholder="chrome"></a-input>
+            </a-form-item>
+        </a-col>
+    </a-row>
+    <a-divider orientation="left">Advanced</a-divider>
+    <a-row :gutter="16">
+        <a-col :xs="24" :sm="12">
+            <a-form-item label="spiderX">
+                <a-input v-model.trim="inbound.stream.reality.spiderX" placeholder="例如：/news"></a-input>
+            </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="6">
+            <a-form-item label="show">
+                <a-switch v-model="inbound.stream.reality.show"></a-switch>
+            </a-form-item>
+        </a-col>
+        <a-col :xs="24" :sm="6">
+            <a-form-item label="maxTimeDiff">
+                <a-input-number v-model.number="inbound.stream.reality.maxTimeDiff" :min="0" style="width: 100%;"></a-input-number>
+            </a-form-item>
+        </a-col>
+    </a-row>
+</a-form>
+{{end}}

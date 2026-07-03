@@ -11,6 +11,14 @@
             message="Vision Flow / Flow"
             description="Vision is supported only by modern VLESS/XTLS-compatible configurations. Full modern REALITY/Vision UI is planned.">
     </a-alert>
+    <a-alert
+            v-if="isRealityModeActive()"
+            type="warning"
+            show-icon
+            style="margin-bottom: 12px;"
+            message="REALITY + Vision"
+            description="REALITY commonly pairs with xtls-rprx-vision. This phase only prepares the UI skeleton and will block saving.">
+    </a-alert>
     <a-form-item v-if="hasVisionFlowField()" label="Vision Flow / Flow">
         <a-select v-model="inbound.settings.vlesses[0].flow" style="width: 150px">
             <a-select-option value="">无</a-select-option>
