@@ -2,6 +2,25 @@
 <a-modal id="qrcode-modal" v-model="qrModal.visible" :title="qrModal.title"
          :closable="true" width="300px" :ok-text="qrModal.okText"
          cancel-text='{{ i18n "close" }}' :ok-button-props="{attrs:{id:'qr-modal-ok-btn'}}">
+    <div v-if="qrModal.supportsCustomShareAddress" style="margin-bottom: 12px;">
+        <a-alert
+                type="info"
+                show-icon
+                style="margin-bottom: 12px;"
+                message="自定义二维码入口"
+                description="输入地址后生成临时二维码。留空则保持原始二维码和原始复制内容不变。">
+        </a-alert>
+        <a-row :gutter="8">
+            <a-col :span="16">
+                <a-input v-model.trim="qrModal.customShareAddress" placeholder="例如：edge.example.com 或 2001:db8::1"></a-input>
+            </a-col>
+            <a-col :span="8">
+                <a-button type="primary" block @click="qrModal.applyCustomShareAddress()">
+                    生成临时二维码
+                </a-button>
+            </a-col>
+        </a-row>
+    </div>
     <canvas id="qrCode" style="width: 100%; height: 100%;"></canvas>
 </a-modal>
 
@@ -9,21 +28,27 @@
 
     const qrModal = {
         title: '',
+        originalContent: '',
+        originalCopyText: '',
         content: '',
         okText: '',
         copyText: '',
+        customShareAddress: '',
+        supportsCustomShareAddress: false,
         qrcode: null,
         clipboard: null,
         visible: false,
         show: function (title='', content='', okText='{{ i18n "copy" }}', copyText='') {
             this.title = title;
-            this.content = content;
             this.okText = okText;
-            if (ObjectUtil.isEmpty(copyText)) {
-                this.copyText = content;
-            } else {
-                this.copyText = copyText;
-            }
+            this.originalContent = content;
+            this.originalCopyText = ObjectUtil.isEmpty(copyText) ? content : copyText;
+            this.content = this.originalContent;
+            this.copyText = this.originalCopyText;
+            this.customShareAddress = '';
+            this.supportsCustomShareAddress = typeof Inbound !== 'undefined'
+                && typeof Inbound.canOverrideShareLinkAddress === 'function'
+                && Inbound.canOverrideShareLinkAddress(content);
             this.visible = true;
             qrModalApp.$nextTick(() => {
                 if (this.clipboard === null) {
@@ -36,10 +61,25 @@
                     this.qrcode = new QRious({
                         element: document.querySelector('#qrCode'),
                         size: 260,
-                        value: content,
+                        value: this.content,
                     });
                 } else {
-                    this.qrcode.value = content;
+                    this.qrcode.value = this.content;
+                }
+            });
+        },
+        applyCustomShareAddress: function () {
+            const override = (this.customShareAddress || '').trim();
+            if (ObjectUtil.isEmpty(override)) {
+                this.content = this.originalContent;
+                this.copyText = this.originalCopyText;
+            } else {
+                this.content = Inbound.overrideShareLinkAddress(this.originalContent, override);
+                this.copyText = Inbound.overrideShareLinkAddress(this.originalCopyText, override);
+            }
+            qrModalApp.$nextTick(() => {
+                if (this.qrcode !== null) {
+                    this.qrcode.value = this.content;
                 }
             });
         },

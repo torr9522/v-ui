@@ -53,6 +53,147 @@ Object.freeze(RULE_IP);
 Object.freeze(RULE_DOMAIN);
 Object.freeze(FLOW_CONTROL);
 
+function stripIPv6Brackets(host='') {
+    const value = String(host || '').trim();
+    if (value.startsWith('[') && value.includes(']')) {
+        return value.slice(1, value.indexOf(']'));
+    }
+    return value;
+}
+
+function isIPv6Host(host='') {
+    const value = stripIPv6Brackets(host);
+    return value.includes(':');
+}
+
+function normalizeShareAddress(input, forUri=false) {
+    let value = String(input || '').trim();
+    if (value === '') {
+        return '';
+    }
+
+    value = value.replace(/^https?:\/\//i, '');
+    value = value.split('#')[0].split('?')[0];
+    while (value.endsWith('/')) {
+        value = value.slice(0, -1);
+    }
+    const slashIndex = value.indexOf('/');
+    if (slashIndex >= 0) {
+        value = value.slice(0, slashIndex);
+    }
+    value = value.trim();
+    if (value === '') {
+        return '';
+    }
+
+    let host = value;
+    if (host.startsWith('[')) {
+        const end = host.indexOf(']');
+        host = end > 0 ? host.slice(1, end) : host.slice(1);
+    } else {
+        const colonCount = (host.match(/:/g) || []).length;
+        if (colonCount === 1) {
+            host = host.slice(0, host.indexOf(':'));
+        }
+    }
+
+    host = stripIPv6Brackets(host).trim();
+    if (host === '') {
+        return '';
+    }
+    if (forUri && isIPv6Host(host)) {
+        return `[${host}]`;
+    }
+    return host;
+}
+
+function decodeBase64String(value='') {
+    if (typeof Base64 !== 'undefined' && typeof Base64.decode === 'function') {
+        return Base64.decode(value);
+    }
+    if (typeof atob === 'function') {
+        return atob(value);
+    }
+    if (typeof Buffer !== 'undefined') {
+        return Buffer.from(String(value), 'base64').toString('utf8');
+    }
+    throw new Error('Base64 decode is not available');
+}
+
+function decodeSafeBase64String(value='') {
+    let base = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    while (base.length % 4 !== 0) {
+        base += '=';
+    }
+    return decodeBase64String(base);
+}
+
+function formatShareAddress(address='', forUri=false) {
+    const normalized = normalizeShareAddress(address, false);
+    if (normalized === '') {
+        return '';
+    }
+    if (forUri && isIPv6Host(normalized)) {
+        return `[${normalized}]`;
+    }
+    return normalized;
+}
+
+function overrideShareLinkAddress(link='', shareAddressOverride='') {
+    const rawLink = String(link || '');
+    const overrideHost = normalizeShareAddress(shareAddressOverride, false);
+    if (overrideHost === '') {
+        return rawLink;
+    }
+
+    if (rawLink.startsWith('vmess://')) {
+        const payload = rawLink.slice('vmess://'.length);
+        const json = JSON.parse(decodeBase64String(payload));
+        json.add = overrideHost;
+        return 'vmess://' + base64(JSON.stringify(json, null, 2));
+    }
+
+    if (rawLink.startsWith('vless://') || rawLink.startsWith('trojan://')) {
+        const url = new URL(rawLink);
+        url.hostname = overrideHost;
+        return url.toString();
+    }
+
+    if (rawLink.startsWith('ss://')) {
+        const hashIndex = rawLink.indexOf('#');
+        const hashSuffix = hashIndex >= 0 ? rawLink.slice(hashIndex) : '';
+        const main = hashIndex >= 0 ? rawLink.slice(0, hashIndex) : rawLink;
+        const encoded = main.slice('ss://'.length);
+        const decoded = decodeSafeBase64String(encoded);
+        const atIndex = decoded.lastIndexOf('@');
+        if (atIndex < 0) {
+            return rawLink;
+        }
+
+        const prefix = decoded.slice(0, atIndex + 1);
+        const hostPort = decoded.slice(atIndex + 1);
+        let port = '';
+        if (hostPort.startsWith('[')) {
+            const end = hostPort.indexOf(']');
+            if (end < 0) {
+                return rawLink;
+            }
+            port = hostPort.slice(end + 2);
+        } else {
+            const colonIndex = hostPort.lastIndexOf(':');
+            if (colonIndex < 0) {
+                return rawLink;
+            }
+            port = hostPort.slice(colonIndex + 1);
+        }
+
+        const next = prefix + formatShareAddress(overrideHost, true) + ':' + port;
+        return 'ss://' + safeBase64(next) + hashSuffix;
+    }
+
+    return rawLink;
+}
+
 class XrayCommonClass {
 
     static toJsonArray(arr) {
@@ -978,7 +1119,7 @@ class Inbound extends XrayCommonClass {
         this.sniffing = new Sniffing();
     }
 
-    genVmessLink(address='', remark='') {
+    genVmessLink(address='', remark='', shareAddressOverride='') {
         if (this.protocol !== Protocols.VMESS) {
             return '';
         }
@@ -986,6 +1127,7 @@ class Inbound extends XrayCommonClass {
         let type = 'none';
         let host = '';
         let path = '';
+        let shareAddress = formatShareAddress(address, false);
         if (network === 'tcp') {
             let tcp = this.stream.tcp;
             type = tcp.type;
@@ -1020,16 +1162,15 @@ class Inbound extends XrayCommonClass {
             path = this.stream.grpc.serviceName;
         }
 
-        if (this.stream.security === 'tls') {
-            if (!ObjectUtil.isEmpty(this.stream.tls.server)) {
-                address = this.stream.tls.server;
-            }
+        if (this.stream.security === 'tls' && !ObjectUtil.isEmpty(this.stream.tls.server)) {
+            shareAddress = formatShareAddress(this.stream.tls.server, false);
         }
+        shareAddress = normalizeShareAddress(shareAddressOverride, false) || shareAddress;
 
         let obj = {
             v: '2',
             ps: remark,
-            add: address,
+            add: shareAddress,
             port: this.port,
             id: this.settings.vmesses[0].id,
             aid: this.settings.vmesses[0].alterId,
@@ -1042,12 +1183,13 @@ class Inbound extends XrayCommonClass {
         return 'vmess://' + base64(JSON.stringify(obj, null, 2));
     }
 
-    genVLESSLink(address = '', remark='') {
+    genVLESSLink(address = '', remark='', shareAddressOverride='') {
         const settings = this.settings;
         const uuid = settings.vlesses[0].id;
         const port = this.port;
         const type = this.stream.network;
         const params = new Map();
+        let shareAddress = formatShareAddress(address, true);
         params.set("type", this.stream.network);
         if (this.xtls) {
             params.set("security", "xtls");
@@ -1100,16 +1242,17 @@ class Inbound extends XrayCommonClass {
 
         if (this.stream.security === 'tls') {
             if (!ObjectUtil.isEmpty(this.stream.tls.server)) {
-                address = this.stream.tls.server;
-                params.set("sni", address);
+                params.set("sni", this.stream.tls.server);
+                shareAddress = formatShareAddress(this.stream.tls.server, true);
             }
         }
+        shareAddress = normalizeShareAddress(shareAddressOverride, true) || shareAddress;
 
         if (this.xtls) {
             params.set("flow", this.settings.vlesses[0].flow);
         }
 
-        const link = `vless://${uuid}@${address}:${port}`;
+        const link = `vless://${uuid}@${shareAddress}:${port}`;
         const url = new URL(link);
         for (const [key, value] of params) {
             url.searchParams.set(key, value)
@@ -1118,16 +1261,17 @@ class Inbound extends XrayCommonClass {
         return url.toString();
     }
 
-    genSSLink(address='', remark='') {
+    genSSLink(address='', remark='', shareAddressOverride='') {
         if (!this.isPlainShadowsocksShareLink()) {
             return '';
         }
         let settings = this.settings;
-        return 'ss://' + safeBase64(settings.method + ':' + settings.password + '@' + address + ':' + this.port)
+        const shareAddress = normalizeShareAddress(shareAddressOverride, true) || formatShareAddress(address, true);
+        return 'ss://' + safeBase64(settings.method + ':' + settings.password + '@' + shareAddress + ':' + this.port)
             + '#' + encodeURIComponent(remark);
     }
 
-    genTrojanLink(address='', remark='') {
+    genTrojanLink(address='', remark='', shareAddressOverride='') {
         if (this.protocol !== Protocols.TROJAN) {
             return '';
         }
@@ -1136,6 +1280,7 @@ class Inbound extends XrayCommonClass {
         const params = new Map();
         const type = this.stream.network || 'tcp';
         const security = this.xtls ? 'xtls' : (this.stream.security || 'none');
+        let shareAddress = formatShareAddress(address, true);
         params.set('type', type);
         params.set('security', security);
 
@@ -1207,11 +1352,12 @@ class Inbound extends XrayCommonClass {
         }
 
         if ((this.tls || this.xtls) && !ObjectUtil.isEmpty(this.stream.tls.server)) {
-            address = this.stream.tls.server;
             params.set('sni', this.stream.tls.server);
+            shareAddress = formatShareAddress(this.stream.tls.server, true);
         }
+        shareAddress = normalizeShareAddress(shareAddressOverride, true) || shareAddress;
 
-        const url = new URL(`trojan://${address}:${this.port}`);
+        const url = new URL(`trojan://${shareAddress}:${this.port}`);
         url.username = settings.clients[0].password;
         for (const [key, value] of params) {
             if (!ObjectUtil.isEmpty(value)) {
@@ -1222,14 +1368,30 @@ class Inbound extends XrayCommonClass {
         return url.toString();
     }
 
-    genLink(address='', remark='') {
+    genLink(address='', remark='', shareAddressOverride='') {
         switch (this.protocol) {
-            case Protocols.VMESS: return this.genVmessLink(address, remark);
-            case Protocols.VLESS: return this.genVLESSLink(address, remark);
-            case Protocols.SHADOWSOCKS: return this.genSSLink(address, remark);
-            case Protocols.TROJAN: return this.genTrojanLink(address, remark);
+            case Protocols.VMESS: return this.genVmessLink(address, remark, shareAddressOverride);
+            case Protocols.VLESS: return this.genVLESSLink(address, remark, shareAddressOverride);
+            case Protocols.SHADOWSOCKS: return this.genSSLink(address, remark, shareAddressOverride);
+            case Protocols.TROJAN: return this.genTrojanLink(address, remark, shareAddressOverride);
             default: return '';
         }
+    }
+
+    static normalizeShareAddress(input, forUri=false) {
+        return normalizeShareAddress(input, forUri);
+    }
+
+    static overrideShareLinkAddress(link='', shareAddressOverride='') {
+        return overrideShareLinkAddress(link, shareAddressOverride);
+    }
+
+    static canOverrideShareLinkAddress(link='') {
+        const value = String(link || '');
+        return value.startsWith('vmess://')
+            || value.startsWith('vless://')
+            || value.startsWith('trojan://')
+            || value.startsWith('ss://');
     }
 
     static fromJson(json={}) {

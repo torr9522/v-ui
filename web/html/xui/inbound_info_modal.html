@@ -3,6 +3,25 @@
 <a-modal id="inbound-info-modal" v-model="infoModal.visible" title="详细信息" @ok="infoModal.ok"
          :closable="true" :mask-closable="true"
          ok-text="复制链接" cancel-text='{{ i18n "close" }}' :ok-button-props="infoModal.okBtnPros">
+    <div v-if="dbInbound.hasLink()" style="margin-bottom: 16px;">
+        <a-alert
+                type="info"
+                show-icon
+                style="margin-bottom: 12px;"
+                message="自定义分享地址"
+                description="留空则使用原始地址。只影响临时复制的分享链接，不影响原始链接、节点配置或订阅。">
+        </a-alert>
+        <a-row :gutter="8">
+            <a-col :span="18">
+                <a-input v-model.trim="infoModal.customShareAddress" placeholder="例如：edge.example.com 或 2001:db8::1"></a-input>
+            </a-col>
+            <a-col :span="6">
+                <a-button id="inbound-info-modal-custom-copy-btn" type="primary" block>
+                    复制自定义分享链接
+                </a-button>
+            </a-col>
+        </a-row>
+    </div>
     <inbound-info :db-inbound="dbInbound" :inbound="inbound"></inbound-info>
 </a-modal>
 <script>
@@ -12,6 +31,8 @@
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
         clipboard: null,
+        customClipboard: null,
+        customShareAddress: '',
         okBtnPros: {
             attrs: {
                 id: "inbound-info-modal-ok-btn",
@@ -21,6 +42,7 @@
         show(dbInbound) {
             this.inbound = dbInbound.toInbound();
             this.dbInbound = new DBInbound(dbInbound);
+            this.customShareAddress = '';
             this.visible = true;
 
             if (dbInbound.hasLink()) {
@@ -35,6 +57,15 @@
                         text: () => this.dbInbound.genLink(),
                     });
                     this.clipboard.on('success', () => app.$message.success('复制成功'));
+                });
+            }
+
+            if (this.customClipboard == null) {
+                infoModalApp.$nextTick(() => {
+                    this.customClipboard = new ClipboardJS('#inbound-info-modal-custom-copy-btn', {
+                        text: () => this.dbInbound.genLink(this.customShareAddress),
+                    });
+                    this.customClipboard.on('success', () => app.$message.success('复制成功'));
                 });
             }
         },

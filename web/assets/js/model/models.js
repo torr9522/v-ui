@@ -196,9 +196,9 @@ class DBInbound {
         }
     }
 
-    genLink() {
+    genLink(shareAddressOverride='') {
         const inbound = this.toInbound();
-        return inbound.genLink(this.address, this.remark);
+        return inbound.genLink(this.address, this.remark, shareAddressOverride);
     }
 }
 
