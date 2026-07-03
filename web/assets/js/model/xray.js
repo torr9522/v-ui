@@ -641,6 +641,8 @@ TlsStreamSettings.Cert = class extends XrayCommonClass {
     }
 };
 
+// REALITY is still experimental in v-ui. This model only prepares the
+// frontend structure and must not be treated as an active config path yet.
 class RealityStreamSettings extends XrayCommonClass {
     constructor(dest='',
                 serverNames=[],
@@ -651,18 +653,31 @@ class RealityStreamSettings extends XrayCommonClass {
                 fingerprint='chrome',
                 spiderX='',
                 show=false,
-                maxTimeDiff=0) {
+                maxTimeDiff=0,
+                flow='') {
         super();
+        // Server-side REALITY destination, usually host:port.
         this.dest = dest;
+        // Allowed SNI list for REALITY handshakes.
         this.serverNames = Array.isArray(serverNames) ? serverNames : [];
+        // Server private key generated for REALITY.
         this.privateKey = privateKey;
+        // Allowed REALITY short IDs on the server side.
         this.shortIds = Array.isArray(shortIds) ? shortIds : [];
+        // Client-export placeholder; not used for inbound saving in this phase.
         this.publicKey = publicKey;
+        // Client-export placeholder for single short ID selection.
         this.shortId = shortId;
+        // uTLS fingerprint for future client export / UI mapping.
         this.fingerprint = fingerprint;
+        // Advanced REALITY client camouflage path placeholder.
         this.spiderX = spiderX;
+        // Advanced debug flag kept for Xray 26.5.3 field parity.
         this.show = show;
+        // Allowed client/server time delta in milliseconds.
         this.maxTimeDiff = Number.isFinite(maxTimeDiff) ? maxTimeDiff : 0;
+        // Vision flow placeholder. Full REALITY/Vision generation is next phase.
+        this.flow = flow;
     }
 
     static fromJson(json={}) {
@@ -677,6 +692,7 @@ class RealityStreamSettings extends XrayCommonClass {
             json.spiderX || '',
             !!json.show,
             Number.isFinite(json.maxTimeDiff) ? json.maxTimeDiff : 0,
+            json.flow || '',
         );
     }
 
@@ -692,6 +708,7 @@ class RealityStreamSettings extends XrayCommonClass {
             spiderX: this.spiderX,
             show: this.show,
             maxTimeDiff: this.maxTimeDiff,
+            flow: this.flow,
         };
     }
 }
