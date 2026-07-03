@@ -81,9 +81,13 @@ function buildVLESS(network = 'ws') {
 {
     assert.equal(Inbound.normalizeShareAddress('', false), '');
     assert.equal(Inbound.normalizeShareAddress('  https://demo.example.com/path?q=1#hash  ', false), 'demo.example.com');
-    assert.equal(Inbound.normalizeShareAddress('https://[2001:db8::1]:8443/path?q=1#hash', false), '2001:db8::1');
-    assert.equal(Inbound.normalizeShareAddress('https://[2001:db8::1]:8443/path?q=1#hash', true), '[2001:db8::1]');
     assert.equal(Inbound.normalizeShareAddress('demo.example.com:12345', false), 'demo.example.com');
+    assert.equal(Inbound.getCustomShareAddressError('hk.example.com'), '');
+    assert.equal(Inbound.getCustomShareAddressError('1.2.3.4'), '');
+    assert.equal(Inbound.getCustomShareAddressError('2001:db8::1'), '当前自定义分享地址暂不支持 IPv6，请使用域名或 IPv4');
+    assert.equal(Inbound.getCustomShareAddressError('[2001:db8::1]'), '当前自定义分享地址暂不支持 IPv6，请使用域名或 IPv4');
+    assert.equal(Inbound.normalizeShareAddress('https://[2001:db8::1]:8443/path?q=1#hash', false), '');
+    assert.equal(Inbound.normalizeShareAddress('https://[2001:db8::1]:8443/path?q=1#hash', true), '');
 }
 
 {
@@ -116,7 +120,7 @@ function buildVLESS(network = 'ws') {
 
     const ipv6Override = inbound.genLink('198.51.100.10', 'vmess-original', '2001:db8::8');
     const ipv6Payload = decodeVmess(ipv6Override);
-    assert.equal(ipv6Payload.add, '2001:db8::8');
+    assert.equal(ipv6Payload.add, 'panel.example.com');
 }
 
 {
@@ -174,8 +178,9 @@ function buildVLESS(network = 'ws') {
     const inbound = buildVLESS('tcp');
     inbound.stream.security = 'xtls';
     inbound.settings.vlesses[0].flow = 'xtls-rprx-vision';
+    const original = inbound.genLink('203.0.113.5', 'vless-xtls');
     const overridden = inbound.genLink('203.0.113.5', 'vless-xtls', '2001:db8::99');
-    assert.ok(overridden.includes('@[2001:db8::99]:8443'));
+    assert.equal(overridden, original);
     const url = new URL(overridden);
     assert.equal(url.searchParams.get('flow'), 'xtls-rprx-vision');
     assert.equal(url.searchParams.get('security'), 'xtls');
@@ -201,7 +206,7 @@ function buildVLESS(network = 'ws') {
     assert.ok(decodeSS(overridden).includes('@ss.example.com:8388'));
 
     const overriddenIPv6 = inbound.genLink('1.2.3.4', 'ss-plain', '2001:db8::7');
-    assert.ok(decodeSS(overriddenIPv6).includes('@[2001:db8::7]:8388'));
+    assert.ok(decodeSS(overriddenIPv6).includes('@1.2.3.4:8388'));
 }
 
 {
@@ -228,7 +233,7 @@ function buildVLESS(network = 'ws') {
     assert.equal(same, original);
 
     const overridden = inbound.genLink('198.51.100.1', 'trojan-custom', '2001:db8::5');
-    assert.ok(overridden.includes('trojan://trojan-password@[2001:db8::5]:443'));
+    assert.ok(overridden.includes('trojan://trojan-password@panel.example.com:443'));
     const url = new URL(overridden);
     assert.equal(url.searchParams.get('sni'), 'panel.example.com');
     assert.equal(url.searchParams.get('host'), 'trojan-host.example.com');
@@ -241,12 +246,14 @@ function buildVLESS(network = 'ws') {
     inbound.stream.ws.addHeader('Host', 'qr-host.example.com');
     const original = inbound.genLink('203.0.113.10', 'qr-vless');
     const overridden = Inbound.overrideShareLinkAddress(original, 'https://edge-qr.example.com/test');
+    const unchangedIPv6 = Inbound.overrideShareLinkAddress(original, '[2001:db8::1]');
     const originalUrl = new URL(original);
     const overriddenUrl = new URL(overridden);
     assert.equal(overriddenUrl.hostname, 'edge-qr.example.com');
     assert.equal(overriddenUrl.searchParams.get('sni'), originalUrl.searchParams.get('sni'));
     assert.equal(overriddenUrl.searchParams.get('host'), originalUrl.searchParams.get('host'));
     assert.equal(overriddenUrl.searchParams.get('path'), originalUrl.searchParams.get('path'));
+    assert.equal(unchangedIPv6, original);
 }
 
 {

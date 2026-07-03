@@ -13,10 +13,10 @@
         </a-alert>
         <a-row :gutter="8">
             <a-col :span="18">
-                <a-input v-model.trim="infoModal.customShareAddress" placeholder="例如：edge.example.com 或 2001:db8::1"></a-input>
+                <a-input v-model.trim="infoModal.customShareAddress" placeholder="例如：edge.example.com 或 1.2.3.4"></a-input>
             </a-col>
             <a-col :span="6">
-                <a-button id="inbound-info-modal-custom-copy-btn" type="primary" block>
+                <a-button id="inbound-info-modal-custom-copy-btn" type="primary" block @click="infoModal.copyCustomLink()">
                     复制自定义分享链接
                 </a-button>
             </a-col>
@@ -31,7 +31,6 @@
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
         clipboard: null,
-        customClipboard: null,
         customShareAddress: '',
         okBtnPros: {
             attrs: {
@@ -59,15 +58,32 @@
                     this.clipboard.on('success', () => app.$message.success('复制成功'));
                 });
             }
-
-            if (this.customClipboard == null) {
-                infoModalApp.$nextTick(() => {
-                    this.customClipboard = new ClipboardJS('#inbound-info-modal-custom-copy-btn', {
-                        text: () => this.dbInbound.genLink(this.customShareAddress),
-                    });
-                    this.customClipboard.on('success', () => app.$message.success('复制成功'));
-                });
+        },
+        copyText(text) {
+            const value = String(text || '');
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                return navigator.clipboard.writeText(value);
             }
+            const textarea = document.createElement('textarea');
+            textarea.value = value;
+            textarea.setAttribute('readonly', '');
+            textarea.style.position = 'absolute';
+            textarea.style.left = '-9999px';
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            return Promise.resolve();
+        },
+        copyCustomLink() {
+            const error = Inbound.getCustomShareAddressError(this.customShareAddress);
+            if (error !== '') {
+                app.$message.warning(error);
+                return;
+            }
+            this.copyText(this.dbInbound.genLink(this.customShareAddress))
+                .then(() => app.$message.success('复制成功'))
+                .catch(() => app.$message.error('复制失败'));
         },
         close() {
             infoModal.visible = false;

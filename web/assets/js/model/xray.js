@@ -66,7 +66,9 @@ function isIPv6Host(host='') {
     return value.includes(':');
 }
 
-function normalizeShareAddress(input, forUri=false) {
+const CUSTOM_SHARE_ADDRESS_IPV6_WARNING = '当前自定义分享地址暂不支持 IPv6，请使用域名或 IPv4';
+
+function extractShareAddressHost(input='') {
     let value = String(input || '').trim();
     if (value === '') {
         return '';
@@ -97,8 +99,20 @@ function normalizeShareAddress(input, forUri=false) {
         }
     }
 
-    host = stripIPv6Brackets(host).trim();
-    if (host === '') {
+    return stripIPv6Brackets(host).trim();
+}
+
+function getCustomShareAddressError(input='') {
+    const host = extractShareAddressHost(input);
+    if (host !== '' && isIPv6Host(host)) {
+        return CUSTOM_SHARE_ADDRESS_IPV6_WARNING;
+    }
+    return '';
+}
+
+function normalizeShareAddress(input, forUri=false) {
+    const host = extractShareAddressHost(input);
+    if (host === '' || getCustomShareAddressError(host) !== '') {
         return '';
     }
     if (forUri && isIPv6Host(host)) {
@@ -1380,6 +1394,10 @@ class Inbound extends XrayCommonClass {
 
     static normalizeShareAddress(input, forUri=false) {
         return normalizeShareAddress(input, forUri);
+    }
+
+    static getCustomShareAddressError(input='') {
+        return getCustomShareAddressError(input);
     }
 
     static overrideShareLinkAddress(link='', shareAddressOverride='') {

@@ -12,7 +12,7 @@
         </a-alert>
         <a-row :gutter="8">
             <a-col :span="16">
-                <a-input v-model.trim="qrModal.customShareAddress" placeholder="例如：edge.example.com 或 2001:db8::1"></a-input>
+                <a-input v-model.trim="qrModal.customShareAddress" placeholder="例如：edge.example.com 或 1.2.3.4"></a-input>
             </a-col>
             <a-col :span="8">
                 <a-button type="primary" block @click="qrModal.applyCustomShareAddress()">
@@ -70,7 +70,12 @@
         },
         applyCustomShareAddress: function () {
             const override = (this.customShareAddress || '').trim();
-            if (ObjectUtil.isEmpty(override)) {
+            const error = Inbound.getCustomShareAddressError(override);
+            if (error !== '') {
+                this.content = this.originalContent;
+                this.copyText = this.originalCopyText;
+                app.$message.warning(error);
+            } else if (ObjectUtil.isEmpty(override)) {
                 this.content = this.originalContent;
                 this.copyText = this.originalCopyText;
             } else {
