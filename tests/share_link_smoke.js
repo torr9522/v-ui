@@ -91,8 +91,9 @@ function buildRealityVLESS() {
     inbound.stream.reality.serverNames = ['www.cloudflare.com', 'cdn.cloudflare.com'];
     inbound.stream.reality.privateKey = 'server-private-key';
     inbound.stream.reality.shortIds = ['0123456789abcdef', 'abcdef0123456789'];
-    inbound.stream.reality.publicKey = 'client-public-key';
-    inbound.stream.reality.fingerprint = '';
+    inbound.stream.realityShare.publicKey = 'client-public-key';
+    inbound.stream.realityShare.shortId = '0123456789abcdef';
+    inbound.stream.realityShare.fingerprint = '';
     inbound.stream.reality.flow = '';
     return inbound;
 }
@@ -207,6 +208,16 @@ function buildRealityVLESS() {
 
 {
     const inbound = buildRealityVLESS();
+    const streamJson = inbound.stream.toJson();
+    assert.equal(streamJson.realityShare.publicKey, 'client-public-key');
+    assert.equal(streamJson.realityShare.shortId, '0123456789abcdef');
+    assert.equal(streamJson.realitySettings.publicKey, undefined);
+    assert.equal(streamJson.realitySettings.shortId, undefined);
+    assert.equal(streamJson.realitySettings.fingerprint, undefined);
+}
+
+{
+    const inbound = buildRealityVLESS();
     const link = inbound.genLink('198.51.100.55', 'reality-minimal');
     const url = new URL(link);
     assert.equal(url.protocol, 'vless:');
@@ -228,6 +239,7 @@ function buildRealityVLESS() {
 
 {
     const inbound = buildRealityVLESS();
+    inbound.stream.realityShare.shortId = '';
     const original = inbound.genLink('198.51.100.55', 'reality-custom');
     const overridden = inbound.genLink('198.51.100.55', 'reality-custom', 'hk.example.com/path?q=1');
     const originalUrl = new URL(original);
@@ -242,7 +254,7 @@ function buildRealityVLESS() {
 
 {
     const inbound = buildRealityVLESS();
-    inbound.stream.reality.publicKey = '';
+    inbound.stream.realityShare.publicKey = '';
     assert.equal(inbound.getShareLinkWarning(), 'REALITY 分享链接需要 publicKey，请先填写 publicKey 后再复制。');
     assert.equal(inbound.genLink('198.51.100.55', 'reality-missing-pbk'), '');
 

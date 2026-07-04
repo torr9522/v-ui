@@ -1,7 +1,9 @@
 package model
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 	"x-ui/util/json_util"
 	"x-ui/xray"
 )
@@ -60,10 +62,32 @@ func (i *Inbound) GenXrayInboundConfig() *xray.InboundConfig {
 		Port:           i.Port,
 		Protocol:       string(i.Protocol),
 		Settings:       json_util.RawMessage(i.Settings),
-		StreamSettings: json_util.RawMessage(i.StreamSettings),
+		StreamSettings: json_util.RawMessage(stripPanelOnlyStreamSettings(i.StreamSettings)),
 		Tag:            i.Tag,
 		Sniffing:       json_util.RawMessage(i.Sniffing),
 	}
+}
+
+func stripPanelOnlyStreamSettings(raw string) string {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return raw
+	}
+
+	stream := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(text), &stream); err != nil {
+		return raw
+	}
+	if _, ok := stream["realityShare"]; !ok {
+		return raw
+	}
+
+	delete(stream, "realityShare")
+	data, err := json.Marshal(stream)
+	if err != nil {
+		return raw
+	}
+	return string(data)
 }
 
 type Outbound struct {

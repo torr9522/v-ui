@@ -648,9 +648,6 @@ class RealityStreamSettings extends XrayCommonClass {
                 serverNames=[],
                 privateKey='',
                 shortIds=[],
-                publicKey='',
-                shortId='',
-                fingerprint='chrome',
                 spiderX='',
                 show=false,
                 maxTimeDiff=0,
@@ -664,12 +661,6 @@ class RealityStreamSettings extends XrayCommonClass {
         this.privateKey = privateKey;
         // Allowed REALITY short IDs on the server side.
         this.shortIds = Array.isArray(shortIds) ? shortIds : [];
-        // Client-export placeholder; not used for inbound saving in this phase.
-        this.publicKey = publicKey;
-        // Client-export placeholder for single short ID selection.
-        this.shortId = shortId;
-        // uTLS fingerprint for future client export / UI mapping.
-        this.fingerprint = fingerprint;
         // Advanced REALITY client camouflage path placeholder.
         this.spiderX = spiderX;
         // Advanced debug flag kept for Xray 26.5.3 field parity.
@@ -686,9 +677,6 @@ class RealityStreamSettings extends XrayCommonClass {
             Array.isArray(json.serverNames) ? json.serverNames : [],
             json.privateKey || '',
             Array.isArray(json.shortIds) ? json.shortIds : [],
-            json.publicKey || '',
-            json.shortId || '',
-            json.fingerprint || 'chrome',
             json.spiderX || '',
             !!json.show,
             Number.isFinite(json.maxTimeDiff) ? json.maxTimeDiff : 0,
@@ -702,9 +690,6 @@ class RealityStreamSettings extends XrayCommonClass {
             serverNames: ObjectUtil.clone(this.serverNames),
             privateKey: this.privateKey,
             shortIds: ObjectUtil.clone(this.shortIds),
-            publicKey: this.publicKey,
-            shortId: this.shortId,
-            fingerprint: this.fingerprint,
             spiderX: this.spiderX,
             show: this.show,
             maxTimeDiff: this.maxTimeDiff,
@@ -713,11 +698,42 @@ class RealityStreamSettings extends XrayCommonClass {
     }
 }
 
+class RealityShareSettings extends XrayCommonClass {
+    constructor(publicKey='', shortId='', fingerprint='chrome') {
+        super();
+        this.publicKey = publicKey;
+        this.shortId = shortId;
+        this.fingerprint = fingerprint || 'chrome';
+    }
+
+    static fromJson(json={}, legacyReality={}) {
+        const publicKey = json.publicKey || legacyReality.publicKey || '';
+        const shortId = json.shortId || legacyReality.shortId || '';
+        const fingerprint = json.fingerprint || legacyReality.fingerprint || 'chrome';
+        return new RealityShareSettings(publicKey, shortId, fingerprint);
+    }
+
+    toJson() {
+        const json = {};
+        if (!ObjectUtil.isEmpty(this.publicKey)) {
+            json.publicKey = this.publicKey;
+        }
+        if (!ObjectUtil.isEmpty(this.shortId)) {
+            json.shortId = this.shortId;
+        }
+        if (!ObjectUtil.isEmpty(this.fingerprint)) {
+            json.fingerprint = this.fingerprint;
+        }
+        return json;
+    }
+}
+
 class StreamSettings extends XrayCommonClass {
     constructor(network='tcp',
                 security='none',
                 tlsSettings=new TlsStreamSettings(),
                 realitySettings=new RealityStreamSettings(),
+                realityShareSettings=new RealityShareSettings(),
                 tcpSettings=new TcpStreamSettings(),
                 kcpSettings=new KcpStreamSettings(),
                 wsSettings=new WsStreamSettings(),
@@ -730,6 +746,7 @@ class StreamSettings extends XrayCommonClass {
         this.security = security;
         this.tls = tlsSettings;
         this.reality = realitySettings;
+        this.realityShare = realityShareSettings;
         this.tcp = tcpSettings;
         this.kcp = kcpSettings;
         this.ws = wsSettings;
@@ -782,11 +799,13 @@ class StreamSettings extends XrayCommonClass {
             tls = TlsStreamSettings.fromJson(json.tlsSettings);
         }
         const reality = RealityStreamSettings.fromJson(json.realitySettings);
+        const realityShare = RealityShareSettings.fromJson(json.realityShare, json.realitySettings || {});
         return new StreamSettings(
             json.network,
             json.security,
             tls,
             reality,
+            realityShare,
             TcpStreamSettings.fromJson(json.tcpSettings),
             KcpStreamSettings.fromJson(json.kcpSettings),
             WsStreamSettings.fromJson(json.wsSettings),
@@ -802,6 +821,7 @@ class StreamSettings extends XrayCommonClass {
             network: network,
             security: this.security,
             realitySettings: this.isReality ? this.reality.toJson() : undefined,
+            realityShare: this.isReality ? this.realityShare.toJson() : undefined,
             tlsSettings: this.isTls ? this.tls.toJson() : undefined,
             xtlsSettings: this.isXTls ? this.tls.toJson() : undefined,
             tcpSettings: network === 'tcp' ? this.tcp.toJson() : undefined,
@@ -1144,8 +1164,8 @@ class Inbound extends XrayCommonClass {
         if (!this.isMinimalRealityShareLink()) {
             return '';
         }
-        const reality = this.stream.reality || {};
-        if (ObjectUtil.isEmpty(reality.publicKey)) {
+        const realityShare = this.stream.realityShare || {};
+        if (ObjectUtil.isEmpty(realityShare.publicKey)) {
             return 'REALITY 分享链接需要 publicKey，请先填写 publicKey 后再复制。';
         }
         return '';
@@ -1245,19 +1265,21 @@ class Inbound extends XrayCommonClass {
         let shareAddress = formatShareAddress(address, true);
         if (this.isMinimalRealityShareLink()) {
             const reality = this.stream.reality || {};
-            const publicKey = reality.publicKey || '';
+            const realityShare = this.stream.realityShare || {};
+            const publicKey = realityShare.publicKey || '';
             if (ObjectUtil.isEmpty(publicKey)) {
                 return '';
             }
             const serverNames = Array.isArray(reality.serverNames) ? reality.serverNames : [];
             const shortIds = Array.isArray(reality.shortIds) ? reality.shortIds : [];
             const flow = settings.vlesses[0].flow || reality.flow || 'xtls-rprx-vision';
-            const fingerprint = reality.fingerprint || 'chrome';
+            const shareShortID = realityShare.shortId || shortIds[0] || '';
+            const fingerprint = realityShare.fingerprint || 'chrome';
             if (!ObjectUtil.isEmpty(serverNames[0])) {
                 params.set('sni', serverNames[0]);
             }
-            if (!ObjectUtil.isEmpty(shortIds[0])) {
-                params.set('sid', shortIds[0]);
+            if (!ObjectUtil.isEmpty(shareShortID)) {
+                params.set('sid', shareShortID);
             }
             params.set('encryption', 'none');
             params.set('type', 'tcp');

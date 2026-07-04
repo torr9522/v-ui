@@ -263,6 +263,42 @@ func normalizeRealityShow(value interface{}) bool {
 	return false
 }
 
+func normalizeRealityShareMetadata(stream map[string]interface{}, realitySettings map[string]interface{}) map[string]interface{} {
+	realityShare, _ := stream["realityShare"].(map[string]interface{})
+
+	publicKey := trimJSONStringValue(nil)
+	shortID := trimJSONStringValue(nil)
+	fingerprint := trimJSONStringValue(nil)
+
+	if realityShare != nil {
+		publicKey = trimJSONStringValue(realityShare["publicKey"])
+		shortID = trimJSONStringValue(realityShare["shortId"])
+		fingerprint = trimJSONStringValue(realityShare["fingerprint"])
+	}
+
+	if publicKey == "" {
+		publicKey = trimJSONStringValue(realitySettings["publicKey"])
+	}
+	if shortID == "" {
+		shortID = trimJSONStringValue(realitySettings["shortId"])
+	}
+	if fingerprint == "" {
+		fingerprint = trimJSONStringValue(realitySettings["fingerprint"])
+	}
+
+	normalized := map[string]interface{}{}
+	if publicKey != "" {
+		normalized["publicKey"] = publicKey
+	}
+	if shortID != "" {
+		normalized["shortId"] = shortID
+	}
+	if fingerprint != "" {
+		normalized["fingerprint"] = fingerprint
+	}
+	return normalized
+}
+
 func validateRealityShortIDs(items []string) error {
 	for _, item := range items {
 		if len(item) == 0 {
@@ -363,6 +399,9 @@ func (s *InboundService) normalizeStreamSettings(inbound *model.Inbound) error {
 		"network":         "tcp",
 		"security":        "reality",
 		"realitySettings": normalizedReality,
+	}
+	if realityShare := normalizeRealityShareMetadata(stream, realitySettings); len(realityShare) > 0 {
+		normalizedStream["realityShare"] = realityShare
 	}
 	if tcpSettings, ok := stream["tcpSettings"].(map[string]interface{}); ok && len(tcpSettings) > 0 {
 		normalizedStream["tcpSettings"] = tcpSettings

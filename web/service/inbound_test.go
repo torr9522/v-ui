@@ -24,7 +24,8 @@ func newRealityTestInbound(protocol model.Protocol, network string, realitySetti
 		StreamSettings: `{
 			"network":"` + network + `",
 			"security":"reality",
-			"realitySettings":` + realitySettings + `
+			"realitySettings":` + realitySettings + `,
+			"realityShare":{"publicKey":"share-public-key","shortId":"share-short-id","fingerprint":"firefox"}
 		}`,
 	}
 }
@@ -100,6 +101,20 @@ func TestAddInboundPersistsNormalizedReality(t *testing.T) {
 		t.Fatalf("expected fingerprint to be omitted from server realitySettings")
 	}
 
+	realityShare, ok := stream["realityShare"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected realityShare object to be preserved")
+	}
+	if realityShare["publicKey"] != "share-public-key" {
+		t.Fatalf("unexpected realityShare publicKey: %v", realityShare["publicKey"])
+	}
+	if realityShare["shortId"] != "share-short-id" {
+		t.Fatalf("unexpected realityShare shortId: %v", realityShare["shortId"])
+	}
+	if realityShare["fingerprint"] != "firefox" {
+		t.Fatalf("unexpected realityShare fingerprint: %v", realityShare["fingerprint"])
+	}
+
 	serverNames, ok := reality["serverNames"].([]interface{})
 	if !ok || len(serverNames) != 2 {
 		t.Fatalf("expected 2 serverNames, got %v", reality["serverNames"])
@@ -107,6 +122,47 @@ func TestAddInboundPersistsNormalizedReality(t *testing.T) {
 	shortIDs, ok := reality["shortIds"].([]interface{})
 	if !ok || len(shortIDs) != 2 {
 		t.Fatalf("expected 2 shortIds, got %v", reality["shortIds"])
+	}
+}
+
+func TestNormalizeStreamSettingsMigratesLegacyRealityShareFields(t *testing.T) {
+	service := InboundService{}
+	inbound := &model.Inbound{
+		Port:     24443,
+		Protocol: model.VLESS,
+		Settings: `{"clients":[{"id":"11111111-1111-1111-1111-111111111111","flow":"xtls-rprx-vision"}],"decryption":"none"}`,
+		StreamSettings: `{
+			"network":"tcp",
+			"security":"reality",
+			"realitySettings":{
+				"target":"target.example.com:443",
+				"serverNames":["one.example.com"],
+				"privateKey":"private-key",
+				"shortIds":["6ba85179e30d4fc2"],
+				"publicKey":"legacy-public-key",
+				"shortId":"legacy-short-id",
+				"fingerprint":"chrome"
+			}
+		}`,
+	}
+
+	if err := service.normalizeStreamSettings(inbound); err != nil {
+		t.Fatalf("normalize streamSettings failed: %v", err)
+	}
+
+	stream := decodeJSONMap(t, inbound.StreamSettings)
+	realityShare, ok := stream["realityShare"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected migrated realityShare object")
+	}
+	if realityShare["publicKey"] != "legacy-public-key" {
+		t.Fatalf("expected legacy publicKey migration, got %v", realityShare["publicKey"])
+	}
+	if realityShare["shortId"] != "legacy-short-id" {
+		t.Fatalf("expected legacy shortId migration, got %v", realityShare["shortId"])
+	}
+	if realityShare["fingerprint"] != "chrome" {
+		t.Fatalf("expected legacy fingerprint migration, got %v", realityShare["fingerprint"])
 	}
 }
 

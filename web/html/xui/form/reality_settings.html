@@ -5,7 +5,7 @@
             show-icon
             style="margin-bottom: 16px;"
             message="REALITY Experimental"
-            description="REALITY fields are retained in the frontend model for edit/echo only. REALITY config generation is not enabled yet.">
+            description="REALITY server settings and export metadata are separated. publicKey / shortId / fingerprint are panel-only export fields.">
     </a-alert>
     <a-row :gutter="16">
         <a-col :xs="24" :sm="12">
@@ -63,23 +63,23 @@
             type="info"
             show-icon
             style="margin-bottom: 16px;"
-            message="Client export fields will be enabled in the next phase."
-            description="publicKey / shortId / fingerprint will be connected with share-link and client export later.">
+            message="Share export metadata"
+            description="These fields are stored as panel-only metadata for share export. They are not written into Xray server realitySettings.">
     </a-alert>
     <a-row :gutter="16">
         <a-col :xs="24" :sm="8">
-            <a-form-item label="publicKey (Next phase)">
-                <a-input :value="inbound.stream.reality.publicKey" disabled placeholder="Will be derived for client export"></a-input>
+            <a-form-item label="publicKey">
+                <a-input v-model.trim="inbound.stream.realityShare.publicKey" placeholder="REALITY public key for share export"></a-input>
             </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="8">
-            <a-form-item label="shortId (Next phase)">
-                <a-input :value="inbound.stream.reality.shortId" disabled placeholder="Will be selected for client export"></a-input>
+            <a-form-item label="shortId">
+                <a-input v-model.trim="inbound.stream.realityShare.shortId" placeholder="Optional, fallback to shortIds[0]"></a-input>
             </a-form-item>
         </a-col>
         <a-col :xs="24" :sm="8">
-            <a-form-item label="fingerprint (Next phase)">
-                <a-input :value="inbound.stream.reality.fingerprint" disabled placeholder="chrome"></a-input>
+            <a-form-item label="fingerprint">
+                <a-input v-model.trim="inbound.stream.realityShare.fingerprint" placeholder="chrome"></a-input>
             </a-form-item>
         </a-col>
     </a-row>

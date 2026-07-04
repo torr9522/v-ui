@@ -148,7 +148,11 @@
                 if (!this.inbound.stream.reality) {
                     this.$set(this.inbound.stream, 'reality', new RealityStreamSettings());
                 }
+                if (!this.inbound.stream.realityShare) {
+                    this.$set(this.inbound.stream, 'realityShare', new RealityShareSettings());
+                }
                 const reality = this.inbound.stream.reality;
+                const realityShare = this.inbound.stream.realityShare;
                 if (!Array.isArray(reality.serverNames)) {
                     this.$set(reality, 'serverNames', []);
                 }
@@ -161,15 +165,6 @@
                 if (typeof reality.privateKey === 'undefined') {
                     this.$set(reality, 'privateKey', '');
                 }
-                if (typeof reality.publicKey === 'undefined') {
-                    this.$set(reality, 'publicKey', '');
-                }
-                if (typeof reality.shortId === 'undefined') {
-                    this.$set(reality, 'shortId', '');
-                }
-                if (typeof reality.fingerprint === 'undefined') {
-                    this.$set(reality, 'fingerprint', 'chrome');
-                }
                 if (typeof reality.spiderX === 'undefined') {
                     this.$set(reality, 'spiderX', '');
                 }
@@ -181,6 +176,15 @@
                 }
                 if (typeof reality.flow === 'undefined') {
                     this.$set(reality, 'flow', '');
+                }
+                if (typeof realityShare.publicKey === 'undefined') {
+                    this.$set(realityShare, 'publicKey', '');
+                }
+                if (typeof realityShare.shortId === 'undefined') {
+                    this.$set(realityShare, 'shortId', '');
+                }
+                if (typeof realityShare.fingerprint === 'undefined') {
+                    this.$set(realityShare, 'fingerprint', 'chrome');
                 }
                 return reality;
             },
