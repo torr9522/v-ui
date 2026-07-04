@@ -30,7 +30,6 @@
         visible: false,
         inbound: new Inbound(),
         dbInbound: new DBInbound(),
-        clipboard: null,
         customShareAddress: '',
         okBtnPros: {
             attrs: {
@@ -49,15 +48,16 @@
             } else {
                 this.okBtnPros.attrs.style = "display: none";
             }
-
-            if (this.clipboard == null) {
-                infoModalApp.$nextTick(() => {
-                    this.clipboard = new ClipboardJS(`#${this.okBtnPros.attrs.id}`, {
-                        text: () => this.dbInbound.genLink(),
-                    });
-                    this.clipboard.on('success', () => app.$message.success('复制成功'));
-                });
+        },
+        ok() {
+            const warning = this.inbound.getShareLinkWarning();
+            if (warning !== '') {
+                app.$message.warning(warning);
+                return;
             }
+            this.copyText(this.dbInbound.genLink())
+                .then(() => app.$message.success('复制成功'))
+                .catch(() => app.$message.error('复制失败'));
         },
         copyText(text) {
             const value = String(text || '');
@@ -76,6 +76,11 @@
             return Promise.resolve();
         },
         copyCustomLink() {
+            const warning = this.inbound.getShareLinkWarning();
+            if (warning !== '') {
+                app.$message.warning(warning);
+                return;
+            }
             const error = Inbound.getCustomShareAddressError(this.customShareAddress);
             if (error !== '') {
                 app.$message.warning(error);

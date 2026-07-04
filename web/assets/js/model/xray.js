@@ -1134,7 +1134,28 @@ class Inbound extends XrayCommonClass {
             && this.stream.tcp.type === 'none';
     }
 
+    isMinimalRealityShareLink() {
+        return this.protocol === Protocols.VLESS
+            && this.stream.network === 'tcp'
+            && this.stream.security === 'reality';
+    }
+
+    getRealityShareLinkError() {
+        if (!this.isMinimalRealityShareLink()) {
+            return '';
+        }
+        const reality = this.stream.reality || {};
+        if (ObjectUtil.isEmpty(reality.publicKey)) {
+            return 'REALITY 分享链接需要 publicKey，请先填写 publicKey 后再复制。';
+        }
+        return '';
+    }
+
     getShareLinkWarning() {
+        const realityShareError = this.getRealityShareLinkError();
+        if (!ObjectUtil.isEmpty(realityShareError)) {
+            return realityShareError;
+        }
         if (this.protocol === Protocols.SHADOWSOCKS && !this.isPlainShadowsocksShareLink()) {
             return '当前 Shadowsocks 入站启用了 TLS 或自定义传输。标准 ss:// 链接无法完整表达这些参数，请手动记录节点参数，或改用纯 TCP/无 TLS 的 Shadowsocks。';
         }
@@ -1222,6 +1243,39 @@ class Inbound extends XrayCommonClass {
         const type = this.stream.network;
         const params = new Map();
         let shareAddress = formatShareAddress(address, true);
+        if (this.isMinimalRealityShareLink()) {
+            const reality = this.stream.reality || {};
+            const publicKey = reality.publicKey || '';
+            if (ObjectUtil.isEmpty(publicKey)) {
+                return '';
+            }
+            const serverNames = Array.isArray(reality.serverNames) ? reality.serverNames : [];
+            const shortIds = Array.isArray(reality.shortIds) ? reality.shortIds : [];
+            const flow = settings.vlesses[0].flow || reality.flow || 'xtls-rprx-vision';
+            const fingerprint = reality.fingerprint || 'chrome';
+            if (!ObjectUtil.isEmpty(serverNames[0])) {
+                params.set('sni', serverNames[0]);
+            }
+            if (!ObjectUtil.isEmpty(shortIds[0])) {
+                params.set('sid', shortIds[0]);
+            }
+            params.set('encryption', 'none');
+            params.set('type', 'tcp');
+            params.set('security', 'reality');
+            params.set('flow', flow);
+            params.set('pbk', publicKey);
+            params.set('fp', fingerprint);
+            shareAddress = normalizeShareAddress(shareAddressOverride, true) || shareAddress;
+
+            const url = new URL(`vless://${uuid}@${shareAddress}:${port}`);
+            for (const [key, value] of params) {
+                if (!ObjectUtil.isEmpty(value)) {
+                    url.searchParams.set(key, value);
+                }
+            }
+            url.hash = encodeURIComponent(remark);
+            return url.toString();
+        }
         params.set("type", this.stream.network);
         if (this.xtls) {
             params.set("security", "xtls");

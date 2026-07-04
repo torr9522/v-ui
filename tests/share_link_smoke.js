@@ -78,6 +78,25 @@ function buildVLESS(network = 'ws') {
     return inbound;
 }
 
+function buildRealityVLESS() {
+    const inbound = new Inbound();
+    inbound.protocol = Protocols.VLESS;
+    inbound.settings = Inbound.Settings.getSettings(Protocols.VLESS);
+    inbound.settings.vlesses[0].id = '33333333-3333-3333-3333-333333333333';
+    inbound.settings.vlesses[0].flow = 'xtls-rprx-vision';
+    inbound.port = 9443;
+    inbound.stream.network = 'tcp';
+    inbound.stream.security = 'reality';
+    inbound.stream.reality.dest = 'www.cloudflare.com:443';
+    inbound.stream.reality.serverNames = ['www.cloudflare.com', 'cdn.cloudflare.com'];
+    inbound.stream.reality.privateKey = 'server-private-key';
+    inbound.stream.reality.shortIds = ['0123456789abcdef', 'abcdef0123456789'];
+    inbound.stream.reality.publicKey = 'client-public-key';
+    inbound.stream.reality.fingerprint = '';
+    inbound.stream.reality.flow = '';
+    return inbound;
+}
+
 {
     assert.equal(Inbound.normalizeShareAddress('', false), '');
     assert.equal(Inbound.normalizeShareAddress('  https://demo.example.com/path?q=1#hash  ', false), 'demo.example.com');
@@ -184,6 +203,51 @@ function buildVLESS(network = 'ws') {
     const url = new URL(overridden);
     assert.equal(url.searchParams.get('flow'), 'xtls-rprx-vision');
     assert.equal(url.searchParams.get('security'), 'xtls');
+}
+
+{
+    const inbound = buildRealityVLESS();
+    const link = inbound.genLink('198.51.100.55', 'reality-minimal');
+    const url = new URL(link);
+    assert.equal(url.protocol, 'vless:');
+    assert.equal(url.username, '33333333-3333-3333-3333-333333333333');
+    assert.equal(url.hostname, '198.51.100.55');
+    assert.equal(url.port, '9443');
+    assert.equal(url.searchParams.get('encryption'), 'none');
+    assert.equal(url.searchParams.get('type'), 'tcp');
+    assert.equal(url.searchParams.get('security'), 'reality');
+    assert.equal(url.searchParams.get('flow'), 'xtls-rprx-vision');
+    assert.equal(url.searchParams.get('sni'), 'www.cloudflare.com');
+    assert.equal(url.searchParams.get('pbk'), 'client-public-key');
+    assert.equal(url.searchParams.get('sid'), '0123456789abcdef');
+    assert.equal(url.searchParams.get('fp'), 'chrome');
+    assert.equal(url.searchParams.get('privateKey'), null);
+    assert.equal(url.searchParams.get('target'), null);
+    assert.equal(url.searchParams.get('dest'), null);
+}
+
+{
+    const inbound = buildRealityVLESS();
+    const original = inbound.genLink('198.51.100.55', 'reality-custom');
+    const overridden = inbound.genLink('198.51.100.55', 'reality-custom', 'hk.example.com/path?q=1');
+    const originalUrl = new URL(original);
+    const overriddenUrl = new URL(overridden);
+    assert.equal(overriddenUrl.hostname, 'hk.example.com');
+    assert.equal(overriddenUrl.searchParams.get('sni'), originalUrl.searchParams.get('sni'));
+    assert.equal(overriddenUrl.searchParams.get('pbk'), originalUrl.searchParams.get('pbk'));
+    assert.equal(overriddenUrl.searchParams.get('sid'), originalUrl.searchParams.get('sid'));
+    assert.equal(overriddenUrl.searchParams.get('flow'), originalUrl.searchParams.get('flow'));
+    assert.equal(decodeURIComponent(overriddenUrl.hash.slice(1)), decodeURIComponent(originalUrl.hash.slice(1)));
+}
+
+{
+    const inbound = buildRealityVLESS();
+    inbound.stream.reality.publicKey = '';
+    assert.equal(inbound.getShareLinkWarning(), 'REALITY 分享链接需要 publicKey，请先填写 publicKey 后再复制。');
+    assert.equal(inbound.genLink('198.51.100.55', 'reality-missing-pbk'), '');
+
+    const unchanged = inbound.genLink('198.51.100.55', 'reality-missing-pbk', '1.2.3.4');
+    assert.equal(unchanged, '');
 }
 
 {
