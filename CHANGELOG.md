@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased / Reality Progress Baseline
+
+### Summary
+
+- add minimal REALITY config support for `VLESS + TCP + REALITY`
+- add panel-private `realityShare` metadata for share export
+- add minimal REALITY `vless://` share link export
+- keep `realityShare` out of final `config.json`
+- keep Custom Share Address compatible with REALITY export
+- freeze this work as a development baseline only
+
+### Notes
+
+- this baseline does not create a new stable release
+- current stable release remains `v1.0.2-stable`
+- development freeze tag: `v1.0.2-reality-baseline`
+
 ## v0.1.0
 
 第一个稳定独立开发基线。
