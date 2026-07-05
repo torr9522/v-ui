@@ -4,6 +4,17 @@
 
 `v-ui` is the project codename. The runtime layer, service name, command name, install path, and panel display name remain `x-ui`. This codebase already includes outbound management, routing management, an AI traffic split template, and managed Xray config generation driven by `managedOutboundsRouting`.
 
+## Current Stable
+
+- `v1.0.2-stable`
+- Status: `Ready For Production`
+
+## Current Development Baseline
+
+- Development tag: `v1.0.2-reality-baseline`
+- Freeze entry: [docs/PROJECT_FREEZE_BASELINE.md](./docs/PROJECT_FREEZE_BASELINE.md)
+- REALITY progress: [docs/REALITY_PROGRESS_BASELINE.md](./docs/REALITY_PROGRESS_BASELINE.md)
+
 ## Main Features
 
 - Outbounds: list page, CRUD API, frontend CRUD, system entry protection, and routing reference protection
@@ -55,6 +66,52 @@ Notes:
 - The raw `curl` install entry is not a zero-dependency bootstrap and requires `curl` to be preinstalled
 - The installation flow no longer depends on raw links from the legacy `n-ui` repository
 
+## Upgrade
+
+For an existing `x-ui` runtime installation, the recommended upgrade paths are:
+
+```bash
+x-ui update
+```
+
+or rerun the current repository installer:
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install.sh)
+```
+
+Upgrade notes:
+
+- the runtime layer remains `x-ui`
+- no runtime rename to `v-ui` is planned
+- see [docs/PROJECT_FREEZE_BASELINE.md](./docs/PROJECT_FREEZE_BASELINE.md) for the current stable and development freeze points
+
+## Development Recovery
+
+If local source, snapshots, caches, and build outputs are deleted, development can be restored from GitHub only:
+
+```bash
+git clone https://github.com/torr9522/v-ui.git
+cd v-ui
+git checkout v-ui
+go test ./...
+go build ./...
+```
+
+Local install verification:
+
+```bash
+bash -n install.sh
+bash -n x-ui.sh
+```
+
+To resume from a historical stage, checkout a tag directly:
+
+- `v1.0-stable`
+- `v1.0.1-stable`
+- `v1.0.2-stable`
+- `v1.0.2-reality-baseline`
+
 ## Bundled Assets
 
 The repository now carries the core runtime assets needed for installation and further development:
@@ -102,6 +159,8 @@ Detailed records:
 - [docs/DEVELOPMENT_PLAN.md](./docs/DEVELOPMENT_PLAN.md)
 - [docs/ADR-001-runtime-freeze.md](./docs/ADR-001-runtime-freeze.md)
 - [docs/UPSTREAM_ASSETS.md](./docs/UPSTREAM_ASSETS.md)
+- [docs/REALITY_PROGRESS_BASELINE.md](./docs/REALITY_PROGRESS_BASELINE.md)
+- [docs/PROJECT_FREEZE_BASELINE.md](./docs/PROJECT_FREEZE_BASELINE.md)
 
 ## Credits
 

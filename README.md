@@ -5,9 +5,16 @@
 
 ## Current Stable
 
-- `v1.0.1-stable`
+- `v1.0.2-stable`
 - Status: `Ready For Production`
 - Status: `Ready For Node TLS`
+
+## Current Development Baseline
+
+- Development tag: `v1.0.2-reality-baseline`
+- Baseline scope: REALITY UI / serialization / minimal config / minimal share export
+- Freeze entry: [docs/PROJECT_FREEZE_BASELINE.md](./docs/PROJECT_FREEZE_BASELINE.md)
+- REALITY progress: [docs/REALITY_PROGRESS_BASELINE.md](./docs/REALITY_PROGRESS_BASELINE.md)
 
 ## Architecture Freeze
 
@@ -79,6 +86,54 @@ bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install_en.
 - raw `curl` 安装入口不是“零依赖一键启动”，它要求宿主机预先安装 `curl`
 - 不再依赖旧 `n-ui` 仓库的 raw 链接
 
+## 升级
+
+如果目标机器已经安装过 `x-ui` 运行层，推荐两种升级方式：
+
+```bash
+x-ui update
+```
+
+或者重新执行当前仓库的安装脚本：
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install.sh)
+```
+
+说明：
+
+- 当前升级主线仍然保持 `x-ui` 运行层兼容
+- 不会把运行层重命名为 `v-ui`
+- 稳定升级请优先对照 [docs/PROJECT_FREEZE_BASELINE.md](./docs/PROJECT_FREEZE_BASELINE.md) 和对应 Release 文档
+
+## 二开与恢复开发
+
+如果本机源码、快照、缓存、构建目录全部删除，后续只需重新克隆仓库即可恢复开发：
+
+```bash
+git clone https://github.com/torr9522/v-ui.git
+cd v-ui
+git checkout v-ui
+go test ./...
+go build ./...
+```
+
+本地安装验证：
+
+```bash
+bash -n install.sh
+bash -n x-ui.sh
+```
+
+如需回到稳定发布点或开发冻结点，请直接 checkout 对应 tag：
+
+- `v1.0-stable`
+- `v1.0.1-stable`
+- `v1.0.2-stable`
+- `v1.0.2-reality-baseline`
+
+版本 / Tag / Release / 文档映射见 [docs/PROJECT_FREEZE_BASELINE.md](./docs/PROJECT_FREEZE_BASELINE.md)。
+
 ## 仓库内置资产
 
 本仓库已经纳入运行和二开所需的关键资产：
@@ -128,6 +183,8 @@ bash <(curl -Ls https://raw.githubusercontent.com/torr9522/v-ui/v-ui/install_en.
 - [docs/DEVELOPMENT_RULES.md](./docs/DEVELOPMENT_RULES.md)
 - [docs/ADR-001-runtime-freeze.md](./docs/ADR-001-runtime-freeze.md)
 - [docs/UPSTREAM_ASSETS.md](./docs/UPSTREAM_ASSETS.md)
+- [docs/REALITY_PROGRESS_BASELINE.md](./docs/REALITY_PROGRESS_BASELINE.md)
+- [docs/PROJECT_FREEZE_BASELINE.md](./docs/PROJECT_FREEZE_BASELINE.md)
 
 ## 致谢
 
